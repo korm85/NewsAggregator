@@ -1,105 +1,80 @@
 # Telegram News Deduplicator
 
-Monitors your chosen Telegram news channels and forwards only **unique** stories to a private channel you control. No new apps — just open that one channel in Telegram and scroll once.
+Monitors your Telegram news channels and forwards only **unique** stories to a private channel you control. Runs as a **free GitHub Actions cron job** — no server, no VPS, no monthly cost.
 
 ## How it works
 
-1. Logs into your Telegram account (read-only access to channels you already follow)
-2. Receives every new post from your configured source channels
-3. Checks it against everything seen in the last 48 hours using text similarity
-4. If it's genuinely new → forwards it to your private output channel
-5. If it's a duplicate (even if reworded) → silently dropped
+1. Every 5 minutes, GitHub runs your script for free
+2. It fetches the latest posts from each source channel (public channels only)
+3. Checks against everything seen in the last 48 hours using text similarity
+4. Unique story → sent to your private Telegram channel via a bot
+5. Duplicate (even if reworded) → silently skipped
 
-## Setup
+You just open your output channel in Telegram and scroll once.
 
-### 1. Get Telegram API credentials
+---
 
-Go to **https://my.telegram.org/apps**, log in, and create an app.
-Copy your **API ID** and **API Hash**.
+## Setup — all done in the browser, nothing to install
 
-### 2. Create your output channel in Telegram
+### Step 1 — Fork this repo
 
-- Open Telegram → New Channel → make it **Private**
-- Name it something like "My News Feed"
-- Copy its username (e.g. `@my_news_feed`) or use its invite link
+Click **Fork** on GitHub. Your own copy runs the automation for free.
 
-### 3. Install dependencies
+### Step 2 — Create a Telegram bot (2 minutes)
+
+1. Open Telegram → search for **@BotFather**
+2. Send `/newbot`, follow the prompts, copy the **bot token** it gives you
+
+### Step 3 — Create your output channel
+
+1. Telegram → New Channel → **Private** → name it "My News Feed"
+2. Add your bot as **Admin** with permission to post messages
+3. Get the channel ID: forward any message from it to **@userinfobot**, copy the ID (starts with `-100...`)
+
+### Step 4 — Add secrets to your GitHub repo
+
+Go to your forked repo → **Settings → Secrets and variables → Actions → New repository secret**
+
+Add these three secrets:
+
+| Secret name | Value |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | The token from @BotFather |
+| `OUTPUT_CHANNEL_ID` | Your channel ID (e.g. `-1001234567890`) |
+| `SOURCE_CHANNELS` | Comma-separated channels, e.g. `@bbcnews,@cnn,@reuters` |
+
+### Step 5 — Enable Actions
+
+Go to your forked repo → **Actions tab** → click "I understand my workflows, enable them".
+
+That's it. The job runs every 5 minutes automatically. Free forever on public repos.
+
+---
+
+## Optional tuning
+
+Go to **Settings → Secrets and variables → Actions → Variables** (not Secrets) to add:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `DEDUP_WINDOW_HOURS` | `48` | How long to remember seen articles |
+| `SIMILARITY_THRESHOLD` | `0.6` | 0.0–1.0. Lower = catch more rewording |
+
+- Still seeing duplicates? Set `SIMILARITY_THRESHOLD` to `0.5`
+- Unique stories being dropped? Set it to `0.7`
+
+---
+
+## Limitations
+
+- **5-minute delay** — not real-time, but fine for news
+- **Public channels only** — channels must have a public `@username` (all major news channels qualify)
+- Posts with only images (no text) are skipped — the deduplicator works on text
+
+## Running locally (optional)
 
 ```bash
 pip install -r requirements.txt
+cp .env.example .env   # fill in your values
+python run.py
 ```
-
-### 4. Configure
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your values:
-
-```env
-TELEGRAM_API_ID=12345678
-TELEGRAM_API_HASH=your_hash
-TELEGRAM_PHONE=+1234567890
-OUTPUT_CHANNEL=@my_news_feed
-SOURCE_CHANNELS=@bbcnews,@cnn,@reuters
-```
-
-### 5. Run
-
-```bash
-python main.py
-```
-
-First run: Telegram will ask for your phone number and a login code.
-After that, the session is saved and future runs start silently.
-
-### 6. Keep it running
-
-**Option A — your own machine (background):**
-```bash
-nohup python main.py &> news.log &
-```
-
-**Option B — cheap VPS / Raspberry Pi:**
-Run the same command, or set it up as a systemd service (see below).
-
-**Option C — free cloud (Railway / Render):**
-Deploy as a background worker service using this repo.
-
-#### systemd service (Linux)
-
-```ini
-# /etc/systemd/system/news-dedup.service
-[Unit]
-Description=Telegram News Deduplicator
-After=network.target
-
-[Service]
-WorkingDirectory=/path/to/NewsAggregator
-ExecStart=/usr/bin/python3 main.py
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl enable --now news-dedup
-```
-
-## Configuration options
-
-| Variable | Default | Description |
-|---|---|---|
-| `SOURCE_CHANNELS` | required | Comma-separated channel usernames to monitor |
-| `OUTPUT_CHANNEL` | required | Your private channel to post unique news |
-| `DEDUP_WINDOW_HOURS` | `48` | How long to remember articles |
-| `SIMILARITY_THRESHOLD` | `0.6` | 0.0-1.0. Lower = catch more duplicates. Raise if legit news is being skipped. |
-| `MIN_TEXT_LENGTH` | `30` | Posts shorter than this (captions, stickers) are always forwarded |
-
-## Tuning similarity
-
-- **Too many duplicates getting through?** Lower `SIMILARITY_THRESHOLD` to `0.5`
-- **Unique news being dropped?** Raise it to `0.7` or `0.75`
-- The default `0.6` works well for news channels that repost the same story with slightly different wording
