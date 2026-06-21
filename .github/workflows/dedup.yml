@@ -2,11 +2,11 @@ name: News Dedup
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # every 5 minutes, free on public repos
+    - cron: "*/5 * * * *"   # every 5 minutes
   workflow_dispatch:          # manual trigger button in GitHub UI
 
 permissions:
-  contents: write             # needed to commit updated state/seen.json
+  contents: write
 
 jobs:
   run:
@@ -27,8 +27,6 @@ jobs:
       - name: Run deduplicator
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          OUTPUT_CHANNEL_ID: ${{ secrets.OUTPUT_CHANNEL_ID }}
-          SOURCE_CHANNELS: ${{ secrets.SOURCE_CHANNELS }}
           DEDUP_WINDOW_HOURS: ${{ vars.DEDUP_WINDOW_HOURS || '48' }}
           SIMILARITY_THRESHOLD: ${{ vars.SIMILARITY_THRESHOLD || '0.6' }}
         run: python run.py
