@@ -7,20 +7,34 @@ log = logging.getLogger(__name__)
 
 _SEND = "https://api.telegram.org/bot{token}/sendMessage"
 _MAX_LEN = 4000
-_DELAY = 1.5      # seconds between messages (Telegram allows ~1/sec per chat)
+_DELAY = 1.5
 _MAX_RETRIES = 3
 
 
-def publish(text: str, source_channel: str) -> bool:
+def publish(text: str, source_channel: str,
+            story_topic: str | None = None,
+            context_line: str | None = None,
+            is_update: bool = False) -> bool:
+
     handle = source_channel.lstrip("@")
     footer = f'\n\n<a href="https://t.me/{handle}">via @{handle}</a>'
 
-    if len(text) + len(footer) > _MAX_LEN:
-        text = text[: _MAX_LEN - len(footer) - 3] + "..."
+    if story_topic and is_update and context_line:
+        header = f"🔄 <b>{story_topic}</b>\n<i>{context_line}</i>\n\n"
+    elif story_topic:
+        header = f"🔵 <b>{story_topic}</b>\n\n"
+    else:
+        header = ""
+
+    body = header + text + footer
+    if len(body) > _MAX_LEN:
+        trim = len(body) - _MAX_LEN + 3
+        text = text[:-trim] + "..."
+        body = header + text + footer
 
     payload = {
         "chat_id": config.OUTPUT_CHANNEL_ID,
-        "text": text + footer,
+        "text": body,
         "parse_mode": "HTML",
         "disable_web_page_preview": False,
     }
