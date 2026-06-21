@@ -1,0 +1,9 @@
+.env
+*.session
+*.session-journal
+seen_messages.db
+news.log
+__pycache__/
+*.py[cod]
+.env.*
+!.env.example
