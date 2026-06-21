@@ -29,8 +29,8 @@ def main() -> None:
             total_seen += 1
             if dedup.is_duplicate(text, state):
                 continue
-            dedup.record(text, state)
             if publisher.publish(text, channel):
+                dedup.record(text, state)
                 total_sent += 1
 
     state_store.save(state)
