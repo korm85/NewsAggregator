@@ -27,7 +27,7 @@ jobs:
       - name: Run deduplicator
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC: ${{ secrets.ANTHROPIC }}
           DEDUP_WINDOW_HOURS: ${{ vars.DEDUP_WINDOW_HOURS || '48' }}
           SIMILARITY_THRESHOLD: ${{ vars.SIMILARITY_THRESHOLD || '0.6' }}
           NARRATIVE_BATCH_LIMIT: ${{ vars.NARRATIVE_BATCH_LIMIT || '20' }}
