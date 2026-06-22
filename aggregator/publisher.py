@@ -7,8 +7,9 @@ log = logging.getLogger(__name__)
 
 _SEND = "https://api.telegram.org/bot{token}/sendMessage"
 _MAX_LEN = 4000
-_DELAY = 1.5
-_MAX_RETRIES = 3
+_DELAY = 1.5       # seconds between successful sends
+_MAX_RETRIES = 2   # retries for network errors only
+_MAX_RATE_WAIT = 60  # if Telegram asks us to wait longer than this, skip the message
 
 
 def publish(text: str, source_channel: str,
@@ -40,19 +41,26 @@ def publish(text: str, source_channel: str,
     }
     url = _SEND.format(token=config.BOT_TOKEN)
 
-    for attempt in range(_MAX_RETRIES):
+    # Handle rate limiting separately from network retries
+    for attempt in range(_MAX_RETRIES + 1):
         try:
             resp = requests.post(url, json=payload, timeout=10)
             if resp.status_code == 429:
-                wait = resp.json().get("parameters", {}).get("retry_after", 30)
+                wait = resp.json().get("parameters", {}).get("retry_after", 10)
+                if wait > _MAX_RATE_WAIT:
+                    log.warning("Rate limit wait too long (%ds) — skipping message", wait)
+                    return False
                 log.warning("Rate limited — waiting %ds", wait)
                 time.sleep(wait)
-                continue
+                continue  # one rate-limit retry, doesn't count against _MAX_RETRIES
             resp.raise_for_status()
             time.sleep(_DELAY)
             return True
         except requests.RequestException as e:
-            log.error("Send failed (attempt %d): %s", attempt + 1, e)
-            time.sleep(2 ** attempt)
+            if attempt < _MAX_RETRIES:
+                log.warning("Send failed, retrying: %s", e)
+                time.sleep(2 ** attempt)
+            else:
+                log.error("Send failed after %d attempts: %s", _MAX_RETRIES + 1, e)
 
     return False
