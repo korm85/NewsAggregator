@@ -11,18 +11,25 @@ _DELAY = 1.5      # seconds between messages (Telegram allows ~1/sec per chat)
 _MAX_RETRIES = 3
 
 
-def publish(text: str, source_channel: str) -> bool:
-    handle = source_channel.lstrip("@")
-    footer = f'\n\n<a href="https://t.me/{handle}">via @{handle}</a>'
+def publish(text: str, source_channel: str,
+            story_topic: str | None = None,
+            is_update: bool = False) -> bool:
 
-    if len(text) + len(footer) > _MAX_LEN:
-        text = text[: _MAX_LEN - len(footer) - 3] + "..."
+    handle = source_channel.lstrip("@")
+    footer = f"\n\nvia @{handle}"
+
+    prefix = f"[{story_topic}] " if story_topic else ""
+
+    body = prefix + text + footer
+    if len(body) > _MAX_LEN:
+        trim = len(body) - _MAX_LEN + 3
+        text = text[:-trim] + "..."
+        body = prefix + text + footer
 
     payload = {
         "chat_id": config.OUTPUT_CHANNEL_ID,
-        "text": text + footer,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": False,
+        "text": body,
+        "disable_web_page_preview": True,
     }
     url = _SEND.format(token=config.BOT_TOKEN)
 

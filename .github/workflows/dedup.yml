@@ -26,15 +26,17 @@ jobs:
 
       - name: Run deduplicator
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.Telegram_sec }}
+          ANTHROPIC: ${{ secrets.ANTHROPIC }}
           DEDUP_WINDOW_HOURS: ${{ vars.DEDUP_WINDOW_HOURS || '48' }}
           SIMILARITY_THRESHOLD: ${{ vars.SIMILARITY_THRESHOLD || '0.6' }}
+          NARRATIVE_BATCH_LIMIT: ${{ vars.NARRATIVE_BATCH_LIMIT || '20' }}
         run: python run.py
 
       - name: Save state
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add state/seen.json
+          git add state/seen.json state/stories.json
           git diff --cached --quiet || git commit -m "chore: update dedup state [skip ci]"
           git push

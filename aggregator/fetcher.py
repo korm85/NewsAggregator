@@ -18,18 +18,26 @@ _TIMEOUT = 15
 
 
 class _PostParser(HTMLParser):
-    """Extracts visible text from tgme_widget_message_text divs."""
+    """Extracts visible text from tgme_widget_message_text divs, skipping forwarded messages."""
 
     def __init__(self) -> None:
         super().__init__()
         self._in_text = 0
         self._current: list[str] = []
         self.posts: list[str] = []
+        self._current_msg_forwarded = False
+        self._in_msg = False
 
     def handle_starttag(self, tag: str, attrs: list) -> None:
         classes = dict(attrs).get("class", "")
+        if tag == "div" and "tgme_widget_message " in classes + " ":
+            self._in_msg = True
+            self._current_msg_forwarded = False
+        if tag == "div" and "tgme_widget_message_forwarded_from" in classes:
+            self._current_msg_forwarded = True
         if tag == "div" and "tgme_widget_message_text" in classes:
-            self._in_text += 1
+            if not self._current_msg_forwarded:
+                self._in_text += 1
         elif self._in_text and tag == "br":
             self._current.append("\n")
 
