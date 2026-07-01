@@ -1,18 +1,4 @@
 {
-  "49113baa": {
-    "topic": "News",
-    "summary": "פצצות תאורה נורו באזור טול כרם\n\nא.ר\n301 העולם הערבי בטלגרם\n\nhttps://t.me/arabworld301news",
-    "article_count": 1,
-    "first_seen": 1782685030.7633963,
-    "last_updated": 1782685030.7633963
-  },
-  "2383d275": {
-    "topic": "News",
-    "summary": "🔴 יו\"ר הפרלמנט הלבנוני: \"ההסכם עם ישראל לא יאומץ\"\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1782689649.0747485,
-    "last_updated": 1782689649.0747485
-  },
   "15d1c5d3": {
     "topic": "News",
     "summary": "🔴 פוטין: \"מחכים שהאירוע מול איראן יסתיים - והמתווכים האמריקנים יגיעו לרוסיה\"\nלמבזק המלא ב-ynet >",
@@ -5507,5 +5493,54 @@
     "article_count": 1,
     "first_seen": 1782944141.144646,
     "last_updated": 1782944141.144646
+  },
+  "cc8e9429": {
+    "topic": "News",
+    "summary": "°תוכן שיווקי",
+    "article_count": 1,
+    "first_seen": 1782949664.238668,
+    "last_updated": 1782949664.238668
+  },
+  "5698ab41": {
+    "topic": "News",
+    "summary": "°תוכן שיווקי",
+    "article_count": 1,
+    "first_seen": 1782949666.061728,
+    "last_updated": 1782949666.061728
+  },
+  "28bd3f34": {
+    "topic": "News",
+    "summary": "https://nziv.net/128828/",
+    "article_count": 1,
+    "first_seen": 1782949667.8890603,
+    "last_updated": 1782949667.8890603
+  },
+  "8709dd7f": {
+    "topic": "News",
+    "summary": "https://nziv.net/128831/",
+    "article_count": 1,
+    "first_seen": 1782949669.717244,
+    "last_updated": 1782949669.717244
+  },
+  "1e3b652a": {
+    "topic": "News",
+    "summary": "https://nziv.net/128837/",
+    "article_count": 1,
+    "first_seen": 1782949671.5354688,
+    "last_updated": 1782949671.5354688
+  },
+  "4bbd9efb": {
+    "topic": "News",
+    "summary": "🔴 טילמנס כבש פנדל דרמטי בהארכה, בלגיה הדיחה את סנגל ועלתה לשמינית הגמר\nלמבזק המלא ב-ynet >",
+    "article_count": 1,
+    "first_seen": 1782949673.3445766,
+    "last_updated": 1782949673.3445766
+  },
+  "e2046687": {
+    "topic": "News",
+    "summary": "🔴 רויטרס: פיצוצים בקייב בעקבות מתקפת טילים רוסית\nלמבזק המלא ב-ynet >",
+    "article_count": 1,
+    "first_seen": 1782949675.174237,
+    "last_updated": 1782949675.174237
   }
 }
