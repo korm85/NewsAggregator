@@ -1,32 +1,4 @@
 {
-  "dc108b80": {
-    "topic": "News",
-    "summary": "°תוכן שיווקי",
-    "article_count": 1,
-    "first_seen": 1782771659.5471258,
-    "last_updated": 1782771659.5471258
-  },
-  "4a517e58": {
-    "topic": "News",
-    "summary": "https://nziv.net/128785/",
-    "article_count": 1,
-    "first_seen": 1782771661.4109359,
-    "last_updated": 1782771661.4109359
-  },
-  "684530b2": {
-    "topic": "News",
-    "summary": "תוכן שיווקי",
-    "article_count": 1,
-    "first_seen": 1782771663.2406573,
-    "last_updated": 1782771663.2406573
-  },
-  "4cc8ef19": {
-    "topic": "News",
-    "summary": "🔴 מנהיגת האופוזיציה בוונצואלה: \"אשוב למדינה כדי לסייע אחרי רעידות האדמה\"\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1782771665.0943618,
-    "last_updated": 1782771665.0943618
-  },
   "6e992441": {
     "topic": "News",
     "summary": "°תוכן שיווקי",
@@ -5899,5 +5871,40 @@
     "article_count": 1,
     "first_seen": 1783028212.6280227,
     "last_updated": 1783028212.6280227
+  },
+  "6f9a0eaa": {
+    "topic": "News",
+    "summary": "°תוכן שיווקי",
+    "article_count": 1,
+    "first_seen": 1783032288.5071292,
+    "last_updated": 1783032288.5071292
+  },
+  "3e8bf996": {
+    "topic": "News",
+    "summary": "תוכן שיווקי",
+    "article_count": 1,
+    "first_seen": 1783032290.3816786,
+    "last_updated": 1783032290.3816786
+  },
+  "f48ce1d4": {
+    "topic": "News",
+    "summary": "🔴 סוריה: עלה ל-9 מניין ההרוגים בפיצוץ בדמשק\nלמבזק המלא ב-ynet >",
+    "article_count": 1,
+    "first_seen": 1783032292.310206,
+    "last_updated": 1783032292.310206
+  },
+  "622cb1d6": {
+    "topic": "News",
+    "summary": "🔴 טראמפ: אני חושב איראן הסכימה בערך לכל מה שאנחנו צריכים\nלמבזק המלא ב-ynet >",
+    "article_count": 1,
+    "first_seen": 1783032294.243275,
+    "last_updated": 1783032294.243275
+  },
+  "a58b9c51": {
+    "topic": "News",
+    "summary": "🔴 דיווח: ענאן חלאילי צפוי לחתום באלופת איטליה אינטר\nלמבזק המלא ב-ynet >",
+    "article_count": 1,
+    "first_seen": 1783032296.1331415,
+    "last_updated": 1783032296.1331415
   }
 }
