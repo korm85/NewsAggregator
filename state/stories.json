@@ -1,46 +1,4 @@
 {
-  "6e992441": {
-    "topic": "News",
-    "summary": "°תוכן שיווקי",
-    "article_count": 1,
-    "first_seen": 1782775875.4078984,
-    "last_updated": 1782775875.4078984
-  },
-  "21b03bc8": {
-    "topic": "News",
-    "summary": "https://nziv.net/128785/",
-    "article_count": 1,
-    "first_seen": 1782775877.2845933,
-    "last_updated": 1782775877.2845933
-  },
-  "b04efa20": {
-    "topic": "News",
-    "summary": "תוכן שיווקי",
-    "article_count": 1,
-    "first_seen": 1782775879.1486492,
-    "last_updated": 1782775879.1486492
-  },
-  "d052d84a": {
-    "topic": "News",
-    "summary": "🔴 מונקו: שניים נפצעו אנוש בפיצוץ מטען חבלה, מרדף משטרתי אחר חשוד\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1782775881.1306539,
-    "last_updated": 1782775881.1306539
-  },
-  "87b8b6fd": {
-    "topic": "News",
-    "summary": "🔴 צעיר ממזרח י-ם נרצח ביריות במהלך קטטה, אחיו נפצע בינוני\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1782775882.9961793,
-    "last_updated": 1782775882.9961793
-  },
-  "1fe917bb": {
-    "topic": "News",
-    "summary": "🔴 הפתעת ענק במונדיאל: גרמניה הודחה לאחר הפסד בפנדלים לפרגוואי\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1782775884.8583639,
-    "last_updated": 1782775884.8583639
-  },
   "ea1d84e2": {
     "topic": "News",
     "summary": "גורו בצוות המו\"מ:ף\n\nאין אמת בדיווח על חידוש החתימה על ההסכם בין איראן לאמריקה, ואין שום הסכם לחידוש החתימה על סדר היום.\n\nאבו צאלח הדסק הערבי\nhttps://t.me/salehdesk1",
@@ -5906,5 +5864,26 @@
     "article_count": 1,
     "first_seen": 1783032296.1331415,
     "last_updated": 1783032296.1331415
+  },
+  "d76a5535": {
+    "topic": "News",
+    "summary": "°תוכן שיווקי",
+    "article_count": 1,
+    "first_seen": 1783036058.7579072,
+    "last_updated": 1783036058.7579072
+  },
+  "a39bae2d": {
+    "topic": "News",
+    "summary": "תוכן שיווקי",
+    "article_count": 1,
+    "first_seen": 1783036060.6731913,
+    "last_updated": 1783036060.6731913
+  },
+  "65d55b2f": {
+    "topic": "News",
+    "summary": "🔴 הירי בטראמפ ב-2024: השירות החשאי לא הקים חדר תקשורת - ופספס 102 דיווחים\nלמבזק המלא ב-ynet >",
+    "article_count": 1,
+    "first_seen": 1783036062.5202992,
+    "last_updated": 1783036062.5202992
   }
 }
