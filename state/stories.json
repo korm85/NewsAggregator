@@ -1,60 +1,4 @@
 {
-  "4efca5ed": {
-    "topic": "News",
-    "summary": "°תוכן שיווקי",
-    "article_count": 1,
-    "first_seen": 1782944127.9245245,
-    "last_updated": 1782944127.9245245
-  },
-  "08909c4e": {
-    "topic": "News",
-    "summary": "°תוכן שיווקי",
-    "article_count": 1,
-    "first_seen": 1782944129.8512964,
-    "last_updated": 1782944129.8512964
-  },
-  "bd411586": {
-    "topic": "News",
-    "summary": "https://nziv.net/128828/",
-    "article_count": 1,
-    "first_seen": 1782944131.7189317,
-    "last_updated": 1782944131.7189317
-  },
-  "0e9c3a4d": {
-    "topic": "News",
-    "summary": "https://nziv.net/128831/",
-    "article_count": 1,
-    "first_seen": 1782944133.6134543,
-    "last_updated": 1782944133.6134543
-  },
-  "5e60a427": {
-    "topic": "News",
-    "summary": "https://nziv.net/128837/",
-    "article_count": 1,
-    "first_seen": 1782944135.5041926,
-    "last_updated": 1782944135.5041926
-  },
-  "935df002": {
-    "topic": "News",
-    "summary": "🔴 שלושה צעירים נורו בחיפה, מצבם קשה\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1782944137.3804498,
-    "last_updated": 1782944137.3804498
-  },
-  "2ae04f14": {
-    "topic": "News",
-    "summary": "🔴 המשטרה: הירי בחיפה מסתמן כפלילי, סורקים אחר חשודים\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1782944139.2860365,
-    "last_updated": 1782944139.2860365
-  },
-  "274c1216": {
-    "topic": "News",
-    "summary": "🔴 בלגיה וסנגל סיימו ב-2:2, המשחק הולך להארכה\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1782944141.144646,
-    "last_updated": 1782944141.144646
-  },
   "cc8e9429": {
     "topic": "News",
     "summary": "°תוכן שיווקי",
@@ -4926,5 +4870,40 @@
     "article_count": 1,
     "first_seen": 1783202933.1552505,
     "last_updated": 1783202933.1552505
+  },
+  "1ffb6850": {
+    "topic": "News",
+    "summary": "°תוכן שיווקי",
+    "article_count": 1,
+    "first_seen": 1783206746.2382247,
+    "last_updated": 1783206746.2382247
+  },
+  "083c1b4b": {
+    "topic": "News",
+    "summary": "°תוכן שיווקי:",
+    "article_count": 1,
+    "first_seen": 1783206748.1075017,
+    "last_updated": 1783206748.1075017
+  },
+  "78ddb47c": {
+    "topic": "News",
+    "summary": "https://nziv.net/128957/",
+    "article_count": 1,
+    "first_seen": 1783206749.9385257,
+    "last_updated": 1783206749.9385257
+  },
+  "65f457f7": {
+    "topic": "News",
+    "summary": "🔴 שגריר איראן בסין: \"נגבה אגרות בהורמוז, בהחלט\"\nלמבזק המלא ב-ynet >",
+    "article_count": 1,
+    "first_seen": 1783206751.8149028,
+    "last_updated": 1783206751.8149028
+  },
+  "d072e97a": {
+    "topic": "News",
+    "summary": "🔴 צרפת ניצחה את פרגוואי - ותפגוש ברבע הגמר את מרוקו\nלמבזק המלא ב-ynet >",
+    "article_count": 1,
+    "first_seen": 1783206753.70604,
+    "last_updated": 1783206753.70604
   }
 }
