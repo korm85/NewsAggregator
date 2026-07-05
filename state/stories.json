@@ -1,67 +1,4 @@
 {
-  "08f96ebf": {
-    "topic": "News",
-    "summary": "°תוכן שיווקי",
-    "article_count": 1,
-    "first_seen": 1783028196.2145412,
-    "last_updated": 1783028196.2145412
-  },
-  "17780f53": {
-    "topic": "News",
-    "summary": "תוכן שיווקי",
-    "article_count": 1,
-    "first_seen": 1783028198.2938423,
-    "last_updated": 1783028198.2938423
-  },
-  "06ecba2b": {
-    "topic": "News",
-    "summary": "פעילות כוחותינו בעיירה הפלסטינית בית רימא שבנפת רמאללה.\nתיעודים ערביים ברשת.\n\nיוסי אליעזר\n301 העולם הערבי בטלגרם\n\nhttps://t.me/arabworld301news",
-    "article_count": 1,
-    "first_seen": 1783028200.3340275,
-    "last_updated": 1783028200.3340275
-  },
-  "d2071a8c": {
-    "topic": "News",
-    "summary": "מתכוננים לאיראן !\n\nיוסי אליעזר\n301 העולם הערבי בטלגרם\n\nhttps://t.me/arabworld301news",
-    "article_count": 1,
-    "first_seen": 1783028202.4237378,
-    "last_updated": 1783028202.4237378
-  },
-  "e1a567e0": {
-    "topic": "News",
-    "summary": "תקיפות בברעשית שבדרום לבנון.\n\nיוסי אליעזר\n301 העולם הערבי בטלרם\n\nhttps://t.me/arabworld301news",
-    "article_count": 1,
-    "first_seen": 1783028204.433432,
-    "last_updated": 1783028204.433432
-  },
-  "559f7b19": {
-    "topic": "News",
-    "summary": "🔴 משרד המשפטים האמריקני: דוחה  כל סמכות של בית הדין הבינלאומי בהאג\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1783028206.463432,
-    "last_updated": 1783028206.463432
-  },
-  "167022d5": {
-    "topic": "News",
-    "summary": "🔴 נעצר חשוד בירי בשפרעם, אחרי שהמשטרה ושב\"כ פרסמו באופן חריג את תמונתו\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1783028208.529444,
-    "last_updated": 1783028208.529444
-  },
-  "b3d9ecf9": {
-    "topic": "News",
-    "summary": "🔴 דיווח: טיילור סוויפט וטרוויס קלסי התחתנו \nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1783028210.5584245,
-    "last_updated": 1783028210.5584245
-  },
-  "2679dedc": {
-    "topic": "News",
-    "summary": "🔴 ספרד ניצחה 0:3 את אוסטריה ועלתה לשמינית הגמר, אוירסבאל רשם צמד\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1783028212.6280227,
-    "last_updated": 1783028212.6280227
-  },
   "6f9a0eaa": {
     "topic": "News",
     "summary": "°תוכן שיווקי",
@@ -4555,5 +4492,40 @@
     "article_count": 1,
     "first_seen": 1783284153.9441085,
     "last_updated": 1783284153.9441085
+  },
+  "94ddb2d3": {
+    "topic": "News",
+    "summary": "°תוכן שיווקי",
+    "article_count": 1,
+    "first_seen": 1783287763.2106245,
+    "last_updated": 1783287763.2106245
+  },
+  "53d69792": {
+    "topic": "News",
+    "summary": "°תוכן שיווקי",
+    "article_count": 1,
+    "first_seen": 1783287765.327682,
+    "last_updated": 1783287765.327682
+  },
+  "5064d4e7": {
+    "topic": "News",
+    "summary": "כולם בשורה אחת - הנהגת איראן, בטקס האבל של עלי חמינאי.\n\nיוסי אליעזר\n301 העולם הערבי בטלגרם\n\nhttps://t.me/arabworld301news",
+    "article_count": 1,
+    "first_seen": 1783287767.3445978,
+    "last_updated": 1783287767.3445978
+  },
+  "c42bd3af": {
+    "topic": "News",
+    "summary": "בלבנון מדווחים על תנועת כטב״מים מעל למספר מרחבים בדרום לבנון.\n\nיאיר גולדבלט - ביטחון ומזרח תיכון | ביטחון ומזרח תיכון ב-X",
+    "article_count": 1,
+    "first_seen": 1783287769.37122,
+    "last_updated": 1783287769.37122
+  },
+  "8601f6a3": {
+    "topic": "News",
+    "summary": "כוחותינו פועלים כעת בכפר חיזמא, שבנפת ירושלים.\n\nלכוחותינו שלום!\n\nיאיר גולדבלט - ביטחון ומזרח תיכון | ביטחון ומזרח תיכון ב-X",
+    "article_count": 1,
+    "first_seen": 1783287771.428083,
+    "last_updated": 1783287771.428083
   }
 }
