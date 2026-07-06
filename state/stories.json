@@ -1,18 +1,4 @@
 {
-  "e227eb1e": {
-    "topic": "News",
-    "summary": "°תוכן שיווקי",
-    "article_count": 1,
-    "first_seen": 1783120632.5417047,
-    "last_updated": 1783120632.5417047
-  },
-  "94456114": {
-    "topic": "News",
-    "summary": "🔴 רוסיה: כבשנו את העיר קוסטיאנטיניבקה שבמחוז דונייצק באוקראינה\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1783120634.4173086,
-    "last_updated": 1783120634.4173086
-  },
   "6ac3968c": {
     "topic": "News",
     "summary": "°תוכן שיווקי",
@@ -5087,5 +5073,33 @@
     "article_count": 1,
     "first_seen": 1783376597.8860915,
     "last_updated": 1783376597.8860915
+  },
+  "7b488ad6": {
+    "topic": "News",
+    "summary": "חשוב!\n\n11 תגובות",
+    "article_count": 1,
+    "first_seen": 1783380970.0774715,
+    "last_updated": 1783380970.0774715
+  },
+  "7f4743bf": {
+    "topic": "News",
+    "summary": "תוכן שיווקי",
+    "article_count": 1,
+    "first_seen": 1783380972.061661,
+    "last_updated": 1783380972.061661
+  },
+  "8ea73672": {
+    "topic": "News",
+    "summary": "https://nziv.net/129029/",
+    "article_count": 1,
+    "first_seen": 1783380974.0236487,
+    "last_updated": 1783380974.0236487
+  },
+  "165e0ca2": {
+    "topic": "News",
+    "summary": "🔴 דיווח: מכלית הותקפה באמצעות \"חימוש לא ידוע\" ליד עומאן, אין נפגעים\nלמבזק המלא ב-ynet >",
+    "article_count": 1,
+    "first_seen": 1783380975.974359,
+    "last_updated": 1783380975.974359
   }
 }
