@@ -1,32 +1,4 @@
 {
-  "7b488ad6": {
-    "topic": "News",
-    "summary": "חשוב!\n\n11 תגובות",
-    "article_count": 1,
-    "first_seen": 1783380970.0774715,
-    "last_updated": 1783380970.0774715
-  },
-  "7f4743bf": {
-    "topic": "News",
-    "summary": "תוכן שיווקי",
-    "article_count": 1,
-    "first_seen": 1783380972.061661,
-    "last_updated": 1783380972.061661
-  },
-  "8ea73672": {
-    "topic": "News",
-    "summary": "https://nziv.net/129029/",
-    "article_count": 1,
-    "first_seen": 1783380974.0236487,
-    "last_updated": 1783380974.0236487
-  },
-  "165e0ca2": {
-    "topic": "News",
-    "summary": "🔴 דיווח: מכלית הותקפה באמצעות \"חימוש לא ידוע\" ליד עומאן, אין נפגעים\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1783380975.974359,
-    "last_updated": 1783380975.974359
-  },
   "55810849": {
     "topic": "News",
     "summary": "חשוב!\n\n11 תגובות",
@@ -7285,5 +7257,26 @@
     "article_count": 1,
     "first_seen": 1783638012.6858878,
     "last_updated": 1783638012.6858878
+  },
+  "004bae8e": {
+    "topic": "News",
+    "summary": "°תוכן שיווקי",
+    "article_count": 1,
+    "first_seen": 1783642453.7701812,
+    "last_updated": 1783642453.7701812
+  },
+  "589c4888": {
+    "topic": "News",
+    "summary": "°תוכן שיווקי",
+    "article_count": 1,
+    "first_seen": 1783642455.6485198,
+    "last_updated": 1783642455.6485198
+  },
+  "531dc98a": {
+    "topic": "News",
+    "summary": "🔴 הקונסוליה הישראלית גינתה את אשתו של ממדאני: \"דוחפת נרטיב שקרי נגדנו\"\nלמבזק המלא ב-ynet >",
+    "article_count": 1,
+    "first_seen": 1783642457.4828732,
+    "last_updated": 1783642457.4828732
   }
 }
