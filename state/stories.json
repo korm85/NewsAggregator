@@ -1,109 +1,4 @@
 {
-  "d1e13304": {
-    "topic": "News",
-    "summary": "תקיפות נרחבות של האמריקנים בבנדר עבאס.\n\nלפרסום ב-301: https://t.me/yossi301\n\nיוסי אליעזר\n301 העולם הערבי בטלגרם",
-    "article_count": 1,
-    "first_seen": 1784330905.1702764,
-    "last_updated": 1784330905.1702764
-  },
-  "5f6f4f8b": {
-    "topic": "News",
-    "summary": "הורמוזגן, איראן:\n\nארה\"ב תקפה בדקות האחרונות 3 גשרים במחוז.\n\nלפרסום ב-301: https://t.me/yossi301\n\nיוסי אליעזר\n301 העולם הערבי בטלגרם",
-    "article_count": 1,
-    "first_seen": 1784330907.0163264,
-    "last_updated": 1784330907.0163264
-  },
-  "553aa860": {
-    "topic": "News",
-    "summary": "https://www.ynetnews.com/article/h62fqh2sb",
-    "article_count": 1,
-    "first_seen": 1784330908.8540268,
-    "last_updated": 1784330908.8540268
-  },
-  "6ce23f45": {
-    "topic": "News",
-    "summary": "תושבים באיראן מדווחים על יציאות של טילים.\n\nזנג ZENG\n\n301 העולם הערבי בטלגרם\nhttps://t.me/arabworld301news",
-    "article_count": 1,
-    "first_seen": 1784330910.7038708,
-    "last_updated": 1784330910.7038708
-  },
-  "0f36d9b2": {
-    "topic": "News",
-    "summary": "תושבים באיראן מדווחים על יציאות של טילים.  זנג ZENG  301 העולם הערבי בטלגרם https://t.me/arabworld301news",
-    "article_count": 1,
-    "first_seen": 1784330912.569109,
-    "last_updated": 1784330912.569109
-  },
-  "d83f75e5": {
-    "topic": "News",
-    "summary": "ככה\"נ לירדן.\n\nזנג ZENG\n\n301 העולם הערבי בטלגרם\nhttps://t.me/arabworld301news",
-    "article_count": 1,
-    "first_seen": 1784330914.390332,
-    "last_updated": 1784330914.390332
-  },
-  "763ec0e8": {
-    "topic": "News",
-    "summary": "תושבים באיראן מדווחים על יציאות של טילים.  זנג ZENG  301 העולם הערבי בטלגרם https://t.me/arabworld301news",
-    "article_count": 1,
-    "first_seen": 1784330916.2432795,
-    "last_updated": 1784330916.2432795
-  },
-  "7059deb5": {
-    "topic": "News",
-    "summary": "אזעקות הופעלו בירדן\n\nא.ר\n301 העולם הערבי בטלגרם\n\nhttps://t.me/arabworld301news",
-    "article_count": 1,
-    "first_seen": 1784330918.0773342,
-    "last_updated": 1784330918.0773342
-  },
-  "055af343": {
-    "topic": "News",
-    "summary": "ברגעים אלו שוב ירי טילים מתבריז ליעד לא ידוע.\n\nזנג ZENG\n\n301 העולם הערבי בטלגרם\nhttps://t.me/arabworld301news",
-    "article_count": 1,
-    "first_seen": 1784330919.9187174,
-    "last_updated": 1784330919.9187174
-  },
-  "4bf43ec1": {
-    "topic": "News",
-    "summary": "בנוסף דיווחים על טילים מתימן שנפלו בסעודיה.\n\nזנג ZENG\n\n301 העולם הערבי בטלגרם\nhttps://t.me/arabworld301news",
-    "article_count": 1,
-    "first_seen": 1784330921.7726557,
-    "last_updated": 1784330921.7726557
-  },
-  "3cd43634": {
-    "topic": "News",
-    "summary": "🔴 גבר נורה בחיפה, מצבו קשה\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1784330923.6088483,
-    "last_updated": 1784330923.6088483
-  },
-  "7da4947c": {
-    "topic": "News",
-    "summary": "🔴 CBS: כמה חיילים אמריקנים נפצעו בתקיפות האיראניות נגד בסיסים בירדן\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1784330925.4586477,
-    "last_updated": 1784330925.4586477
-  },
-  "0b661887": {
-    "topic": "News",
-    "summary": "🔴 צעיר נדקר ליד באר שבע, מצבו קשה\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1784330927.306952,
-    "last_updated": 1784330927.306952
-  },
-  "8a12b7a2": {
-    "topic": "News",
-    "summary": "🔴 גבר נדקר באתר בנייה סמוך למלונות ים המלח, מצבו קשה\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1784330929.1349711,
-    "last_updated": 1784330929.1349711
-  },
-  "8e28c055": {
-    "topic": "News",
-    "summary": "🔴 אזעקות הופעלו בסעודיה\nלמבזק המלא ב-ynet >",
-    "article_count": 1,
-    "first_seen": 1784330930.9818244,
-    "last_updated": 1784330930.9818244
-  },
   "88690e3d": {
     "topic": "News",
     "summary": "🔴 אזעקות גם בבחריין\nלמבזק המלא ב-ynet >",
@@ -7985,5 +7880,26 @@
     "article_count": 1,
     "first_seen": 1784586905.1910079,
     "last_updated": 1784586905.1910079
+  },
+  "47aae100": {
+    "topic": "News",
+    "summary": "°תוכן שיווקי",
+    "article_count": 1,
+    "first_seen": 1784590535.19798,
+    "last_updated": 1784590535.19798
+  },
+  "25e79b57": {
+    "topic": "News",
+    "summary": "דיווחים איראנים על פיצוצים שנשמעו לפני זמן קצר בפעם השנייה מאז חצות בשיראז.\n\nחננאל אביב בטלגרם",
+    "article_count": 1,
+    "first_seen": 1784590537.2001512,
+    "last_updated": 1784590537.2001512
+  },
+  "f739c635": {
+    "topic": "News",
+    "summary": "🔴 איראן: תקפנו מערכות טילים אמריקניות בבסיס אריפג'אן בכוויית\nלמבזק המלא ב-ynet >",
+    "article_count": 1,
+    "first_seen": 1784590539.191944,
+    "last_updated": 1784590539.191944
   }
 }
