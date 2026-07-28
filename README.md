@@ -1,4 +1,7 @@
-# Telegram News Deduplicator
+# placeholder-project
+
+> Placeholder name — this repo is parked for repurposing. What follows documents
+> its current contents (a Telegram news deduplicator), which still work as described.
 
 Monitors 6 Telegram news channels and forwards only **unique** stories to your private AggregatedNews channel. Runs as a free GitHub Actions cron job every 5 minutes — no server, no VPS, no monthly cost.
 
