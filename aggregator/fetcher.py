@@ -11,7 +11,7 @@ import requests
 log = logging.getLogger(__name__)
 
 _HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; NewsAggregator/1.0)",
+    "User-Agent": "Mozilla/5.0 (compatible; placeholder-project/1.0)",
     "Accept-Language": "en-US,en;q=0.9",
 }
 _TIMEOUT = 15
