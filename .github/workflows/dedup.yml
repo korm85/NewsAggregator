@@ -1,8 +1,6 @@
 name: News Dedup
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"   # every 5 minutes
   workflow_dispatch:          # manual trigger button in GitHub UI
 
 permissions:
