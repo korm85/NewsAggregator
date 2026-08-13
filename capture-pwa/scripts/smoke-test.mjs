@@ -98,6 +98,15 @@ try {
     captureBtnEnabled,
   );
 
+  // Gallery button is always visible, not gated behind having captured
+  // something this session, so saved shots from earlier are reachable
+  // immediately.
+  const galleryBtnVisible = await page.$eval('#gallery-btn', (el) => {
+    const style = window.getComputedStyle(el);
+    return style.display !== 'none' && !el.classList.contains('hidden');
+  });
+  console.log('[smoke] gallery button visible with no captures yet:', galleryBtnVisible);
+
   // Smart Frame spec: cardboard toggle should be present and safe to
   // flip on/off without crashing the tracking loop (fake camera has no
   // real card to detect, so this just checks the wiring, not detection).

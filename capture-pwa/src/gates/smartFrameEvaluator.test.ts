@@ -13,7 +13,7 @@ function makeTracker(overrides: Partial<TrackerResult> = {}): TrackerResult {
     rollDeg: 0,
     yawDeg: 0,
     pitchDeg: 0,
-    mar: 0.4, // smiling wide by default
+    mar: 0.78, // wide smile showing teeth, matching the real-device reference sample
     landmarkChecksum: 1000,
     lipPoints: null,
     ...overrides,
@@ -82,14 +82,22 @@ describe('evaluateSmartFrame: MAR (smile width) gate', () => {
     expect(evaluation.prompt).toBe('Ask the patient to smile wide');
   });
 
+  it('fails a regular (not wide enough) smile', () => {
+    // Confirmed on-device: a regular smile scored well below the wide
+    // reference sample (mar 0.78) but above the original 0.35 guess,
+    // which is why that guess was too lenient.
+    const { evaluation } = run(createInitialSmartFrameState(), makeTracker({ mar: 0.45 }), 1, 0);
+    expect(evaluation.gateStatuses.mar).toBe(false);
+  });
+
   it('passes a wide smile', () => {
-    const { evaluation } = run(createInitialSmartFrameState(), makeTracker({ mar: 0.4 }), 1, 0);
+    const { evaluation } = run(createInitialSmartFrameState(), makeTracker({ mar: 0.78 }), 1, 0);
     expect(evaluation.gateStatuses.mar).toBe(true);
   });
 
   it('holds the pass through the exit band once entered (hysteresis)', () => {
-    let { state, now } = run(createInitialSmartFrameState(), makeTracker({ mar: 0.4 }), 1, 0);
-    const { evaluation } = run(state, makeTracker({ mar: 0.3 }), 1, now);
+    let { state, now } = run(createInitialSmartFrameState(), makeTracker({ mar: 0.78 }), 1, 0);
+    const { evaluation } = run(state, makeTracker({ mar: 0.52 }), 1, now);
     expect(evaluation.gateStatuses.mar).toBe(true);
   });
 });

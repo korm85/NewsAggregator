@@ -98,8 +98,9 @@ derived angles, nothing else needs to change.
 - The viewfinder keeps going after each shot. Up to `MAX_SESSION_CAPTURES`
   (8, in `src/config.ts`) per sitting; the button reads "Full" once you
   hit that.
-- Tap **Done** any time to open the gallery: a grid of everything saved
-  this session and before. Tap a thumbnail for the full image, its
+- **Gallery** (top-right) is always visible, not gated behind capturing
+  something this session, tap it any time to open a grid of everything
+  saved this session and before. Tap a thumbnail for the full image, its
   metadata (pitch/yaw/roll/MAR, exposure lock, and, when captured with
   the card, marker/flatness status and light direction), a **Save to
   device** download, or **Delete**.
@@ -150,9 +151,13 @@ operating the phone.
   That's a real signal (a highlight shifted toward one side means the
   light leans that way) but it is explicitly not a solved 3D light
   vector, there's no calibrated rig here for that.
-- **MAR (smile-width) threshold is an initial estimate.**
-  `THRESHOLDS.smileMar` in `src/config.ts` hasn't been checked against a
-  bank of real smile photos yet.
+- **MAR (smile-width) threshold is calibrated off one real reference
+  sample, not a bank of photos.** `THRESHOLDS.smileMar` in
+  `src/config.ts` (0.6 enter / 0.5 exit) was raised after the original
+  0.35/0.28 guess was confirmed on-device to pass a regular smile, not
+  just a wide one showing both arches (the reference capture scored
+  mar ~0.78). Expect to retune with headroom in either direction once
+  there's a bank of real smile photos across different mouth shapes.
 - **No Web Worker.** The tracker and gate evaluator run on the main
   thread, driven by `requestVideoFrameCallback`. Both layers are already
   pure and DOM-free, so moving them into a worker is straightforward but

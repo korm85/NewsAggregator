@@ -95,7 +95,7 @@ function startViewfinder(): void {
   };
 
   const refs = renderViewfinderScreen(root, currentFacingMode === 'front', {
-    onDone: goToGallery,
+    onOpenGallery: goToGallery,
     onCapture: () => performCapture(),
     onSwitchCamera: onSwitchCameraTapped,
     onToggleTorch: onToggleTorchTapped,
@@ -120,14 +120,16 @@ function startViewfinder(): void {
   refs.torchButton.classList.toggle('hidden', !torchSupported);
 
   function updateSessionBadge(): void {
+    // The Gallery button (top-bar) is always visible, saved captures
+    // from earlier sessions should be reachable even before this
+    // session has captured anything new. The badge itself still only
+    // shows once there's something new this session to report.
     if (sessionCaptureCount === 0) {
       refs.sessionBadge.classList.add('hidden');
-      refs.doneButton.classList.add('hidden');
       return;
     }
     refs.sessionBadge.textContent = `Saved ${sessionCaptureCount}/${MAX_SESSION_CAPTURES}`;
     refs.sessionBadge.classList.remove('hidden');
-    refs.doneButton.classList.remove('hidden');
   }
 
   function performCapture(): void {

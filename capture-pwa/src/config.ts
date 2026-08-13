@@ -82,13 +82,16 @@ export const THRESHOLDS = {
 
   /**
    * Mouth Aspect Ratio must be at least this to count as "smiling wide
-   * enough to show teeth" rather than a closed/half smile. Initial
-   * estimate, not yet calibrated against real captures, expect to
-   * retune once there's a bank of real smile photos to check it against.
+   * enough to show teeth" rather than a regular/closed smile. Calibrated
+   * against a real capture of a full wide smile showing both arches
+   * (mar ~0.78, burned into the debug overlay); the original 0.35/0.28
+   * guess was confirmed too lenient on-device, it passed a regular
+   * smile. Set with headroom below that reference sample so it still
+   * works across different mouth shapes/faces, not tuned to one photo.
    */
   smileMar: {
-    enterMin: 0.35,
-    exitMin: 0.28,
+    enterMin: 0.6,
+    exitMin: 0.5,
   } satisfies MinGateConfig,
 
   /**

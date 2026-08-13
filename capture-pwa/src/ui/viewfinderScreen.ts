@@ -4,7 +4,7 @@ export interface ViewfinderRefs {
   liveReadout: HTMLDivElement;
   promptBanner: HTMLDivElement;
   sessionBadge: HTMLDivElement;
-  doneButton: HTMLButtonElement;
+  galleryButton: HTMLButtonElement;
   captureButton: HTMLButtonElement;
   switchCameraButton: HTMLButtonElement;
   torchButton: HTMLButtonElement;
@@ -12,7 +12,7 @@ export interface ViewfinderRefs {
 }
 
 export interface ViewfinderCallbacks {
-  onDone: () => void;
+  onOpenGallery: () => void;
   onCapture: () => void;
   onSwitchCamera: () => void;
   onToggleTorch: () => void;
@@ -43,7 +43,7 @@ export function renderViewfinderScreen(
         </label>
       </div>
       <div class="top-bar">
-        <button id="done-btn" class="hidden">Done</button>
+        <button id="gallery-btn">Gallery</button>
       </div>
       <div class="prompt-banner none" id="prompt-banner"></div>
       <div class="live-readout" id="live-readout">Loading tracker...</div>
@@ -51,8 +51,8 @@ export function renderViewfinderScreen(
     </div>
   `;
 
-  const doneButton = root.querySelector<HTMLButtonElement>('#done-btn')!;
-  doneButton.onclick = callbacks.onDone;
+  const galleryButton = root.querySelector<HTMLButtonElement>('#gallery-btn')!;
+  galleryButton.onclick = callbacks.onOpenGallery;
   const captureButton = root.querySelector<HTMLButtonElement>('#capture-btn')!;
   captureButton.onclick = callbacks.onCapture;
   const switchCameraButton = root.querySelector<HTMLButtonElement>('#switch-camera-btn')!;
@@ -68,7 +68,7 @@ export function renderViewfinderScreen(
     liveReadout: root.querySelector<HTMLDivElement>('#live-readout')!,
     promptBanner: root.querySelector<HTMLDivElement>('#prompt-banner')!,
     sessionBadge: root.querySelector<HTMLDivElement>('#session-badge')!,
-    doneButton,
+    galleryButton,
     captureButton,
     switchCameraButton,
     torchButton,
