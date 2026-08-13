@@ -74,6 +74,11 @@ low). If a sign is backwards, flip `X_SIGN` / `Y_SIGN` in
 `src/tracker/mediapipeTracker.ts`; everything else reads from the
 derived angles, nothing else needs to change.
 
+Confirmed on-device: the direction arrow pointed the wrong way
+left/right (`X_SIGN` was flipped from `1` to `-1` to fix it); up/down
+was correct as shipped. Both `src/tracker/mediapipeTracker.ts` and
+`src/gates/directionPrompt.ts` document this.
+
 ## The capture loop
 
 - **Switch** (top-left) swaps front/rear camera at any time, no reload.

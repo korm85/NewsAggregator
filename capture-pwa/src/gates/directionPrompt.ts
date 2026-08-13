@@ -18,9 +18,11 @@ import type { ArrowDirection } from './types';
  * separately"), and both the text and the arrow direction come out of
  * this one function so they can never disagree.
  *
- * NOT verified against a live tester (handoff Section 8 explicitly
- * calls for testing with a person who has not seen the code). Treat
- * this mapping as a starting point to confirm on-device, not settled.
+ * Verified on a real device: the arrow pointed the wrong way
+ * horizontally until X_SIGN was flipped in mediapipeTracker.ts (see
+ * that file's comment), correcting offAxisVec.x at the source so this
+ * function's logic didn't need to change. Vertical (up/down) was
+ * confirmed correct as-is.
  */
 export function resolveAngleDirection(offAxisVec: { x: number; y: number }): {
   direction: ArrowDirection;

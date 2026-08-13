@@ -44,18 +44,15 @@ const EMPTY_RESULT: TrackerResult = {
 };
 
 /**
- * Angle/roll sign convention, per handoff Section 5. NOT independently
- * verified against a live camera in this environment (no physical face
- * available to turn left/right during development) -- use /debug.html
- * with a real device before trusting direction prompts in the field.
- * If the convention below is wrong, flip the sign constants here; every
- * other layer reads offAxisVec (and now yawDeg/pitchDeg, derived the
- * same way), never the raw matrix.
+ * Angle/roll sign convention, per handoff Section 5. Verified on a real
+ * device: the left/right (horizontal) direction arrow pointed the wrong
+ * way with X_SIGN = 1, confirmed correct after flipping to -1. Vertical
+ * (up/down) was confirmed correct as-is, Y_SIGN left at 1. Every other
+ * layer reads offAxisVec (and yawDeg/pitchDeg, derived the same way),
+ * never the raw matrix, so this is the single point of correction.
  */
-const SIGN_CONVENTION_VERIFIED = false;
-// If /debug.html shows offAxisVec.x flipping the wrong way when turning
-// your head, change these to -1 (per handoff Section 5's verification steps).
-const X_SIGN = 1;
+const SIGN_CONVENTION_VERIFIED = true;
+const X_SIGN = -1;
 const Y_SIGN = 1;
 
 export class MediaPipeTracker implements Tracker {
