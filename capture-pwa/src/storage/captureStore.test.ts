@@ -23,6 +23,10 @@ function makeCapture(overrides: Partial<StoredCapture> = {}): StoredCapture {
     cardAllMarkersVisible: false,
     cardIsFlat: false,
     lightDirection: null,
+    videoBlob: null,
+    videoMimeType: null,
+    videoDurationMs: null,
+    stillSource: 'canvas',
     ...overrides,
   };
 }
@@ -41,6 +45,27 @@ describe('captureStore', () => {
     expect(all[0].id).toBe('a');
     expect(all[0].offAxisDeg).toBe(6.5);
     expect(all[0].blob).toBeInstanceOf(Blob);
+  });
+
+  it('round-trips the supplementary video fields when present, and stays null when absent', async () => {
+    const withVideo = makeCapture({
+      id: 'with-video',
+      videoBlob: new Blob(['fake-webm-bytes'], { type: 'video/webm' }),
+      videoMimeType: 'video/webm',
+      videoDurationMs: 5000,
+    });
+    const withoutVideo = makeCapture({ id: 'without-video' });
+    await saveCapture(withVideo);
+    await saveCapture(withoutVideo);
+
+    const all = await listCaptures();
+    const stored = all.find((c) => c.id === 'with-video')!;
+    expect(stored.videoBlob).toBeInstanceOf(Blob);
+    expect(stored.videoMimeType).toBe('video/webm');
+    expect(stored.videoDurationMs).toBe(5000);
+
+    const storedNoVideo = all.find((c) => c.id === 'without-video')!;
+    expect(storedNoVideo.videoBlob).toBeNull();
   });
 
   it('lists newest capture first', async () => {

@@ -84,6 +84,44 @@ export async function captureAndScoreFrame(
 }
 
 /**
+ * Crops a source image (e.g. a high-res ImageCapture photo, which has
+ * its own native dimensions distinct from the live video stream's) to
+ * a normalized (0-1) region and burns the overlay bar into it, so an
+ * ImageCapture-sourced still ends up cropped to the same mouth region
+ * as a canvas-sourced one instead of showing the full frame -- keeping
+ * capture output consistent regardless of which pipeline produced it
+ * (see imageCapture.ts).
+ */
+export async function cropAndOverlayBlob(
+  sourceBlob: Blob,
+  region: { x: number; y: number; w: number; h: number },
+  overlayLines?: string[],
+): Promise<Blob> {
+  const bitmap = await createImageBitmap(sourceBlob);
+  const rawX = region.x * bitmap.width;
+  const rawY = region.y * bitmap.height;
+  const rawW = region.w * bitmap.width;
+  const rawH = region.h * bitmap.height;
+  const x1 = Math.max(0, rawX);
+  const y1 = Math.max(0, rawY);
+  const x2 = Math.min(bitmap.width, rawX + rawW);
+  const y2 = Math.min(bitmap.height, rawY + rawH);
+  const width = Math.max(1, Math.round(x2 - x1));
+  const height = Math.max(1, Math.round(y2 - y1));
+
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(bitmap, x1, y1, x2 - x1, y2 - y1, 0, 0, width, height);
+  bitmap.close();
+
+  if (overlayLines && overlayLines.length > 0) {
+    drawOverlayBar(ctx, width, height, overlayLines);
+  }
+
+  return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
+}
+
+/**
  * Burns the live debug readout (same numbers /debug.html shows) into
  * the bottom of the saved image, so each photo carries the pose data it
  * was captured at. Crops are small (a mouth region, not a full frame),

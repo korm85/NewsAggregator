@@ -1,9 +1,11 @@
 import { CAPTURE_SEQUENCE } from '../config';
 import type { CardDetectionResult } from './cardDetector';
-import { computeCardGuideRect, unionRect } from './cardGuideRegion';
+import { computeCardGuideRect, unionRect, type NormalizedRect } from './cardGuideRegion';
 import { releaseLock, tryLockCapture } from './deviceCamera';
-import { captureAndScoreFrame, type CropRect } from './frameScore';
+import { captureAndScoreFrame, cropAndOverlayBlob, type CropRect } from './frameScore';
+import { takeHighResPhoto } from './imageCapture';
 import type { LightEstimate } from './lightEstimator';
+import { startVideoRecording, type RecordedVideo } from './videoRecorder';
 
 export interface CaptureMetadata {
   offAxisDeg: number;
@@ -25,6 +27,23 @@ export interface CaptureMetadata {
   cardboardMode: boolean;
   card: CardDetectionResult | null;
   lightDirection: { x: number; y: number } | null;
+  /**
+   * Supplementary video clip recorded concurrently with the raw-frame
+   * burst, full camera frame (see videoRecorder.ts for why it isn't
+   * cropped). Null when MediaRecorder is unsupported or recording
+   * failed, never used for color/shade measurement.
+   */
+  video: RecordedVideo | null;
+  /**
+   * Which pipeline produced the saved still. 'imageCapture' means the
+   * browser's dedicated photo pipeline was used (higher resolution
+   * than the live video stream, Chrome/Android only, see
+   * imageCapture.ts); 'canvas' is the original scored-video-frame
+   * path, used whenever ImageCapture is unsupported (all of iOS/
+   * Safari today) or fails for any reason. Recorded so real-world
+   * quality/reliability per platform can be judged later.
+   */
+  stillSource: 'imageCapture' | 'canvas';
 }
 
 export interface CaptureResult {
@@ -111,30 +130,33 @@ function buildOverlayLines(
 }
 
 /**
- * The saved image is cropped to the mouth bounding box (the same box
- * the tracker computes, padded 15%), not the full camera frame, per
- * "I don't need all the face." When cardboardMode is on, the crop
- * expands to also include the on-screen card guide region (see
- * cardGuideRegion.ts): without this, a "with cardboard" capture would
- * still save a mouth-only crop that excludes the card entirely, even
- * though the whole point of that mode is a photo with the card in it
- * for color calibration, not just card detection numbers in the
- * metadata. Clamped to the video's actual pixel bounds since the
- * normalized region can extend slightly past the frame edge. Falls
- * back to the full frame if no box was available at capture time
- * (shouldn't happen, the shutter button is disabled without a detected
- * face, but a snapshot with a null box must not crash the capture).
+ * The normalized (0-1) region the still image gets cropped to: the
+ * mouth bounding box (the same box the tracker computes, padded 15%),
+ * expanded to also include the on-screen card guide region when
+ * cardboardMode is on (see cardGuideRegion.ts) so a "with cardboard"
+ * capture doesn't exclude the card the clinician was guided to hold
+ * there. Falls back to the full frame if no box was available at
+ * capture time (shouldn't happen, the shutter button is disabled
+ * without a detected face, but a snapshot with a null box must not
+ * crash the capture). A separate function from the pixel-space crop
+ * below (computeCropRect) purely so the normalized region is available
+ * on its own before pixel conversion, not because anything outside
+ * this file currently needs it.
  */
-function computeCropRect(
+function computeNormalizedCropRegion(
   mouthBox: TrackerSnapshot['mouthBox'],
-  videoWidth: number,
-  videoHeight: number,
   includeCardGuide: boolean,
-): CropRect {
-  if (!mouthBox) return { x: 0, y: 0, w: videoWidth, h: videoHeight };
+): NormalizedRect {
+  if (!mouthBox) return { x: 0, y: 0, w: 1, h: 1 };
+  return includeCardGuide ? unionRect(mouthBox, computeCardGuideRect(mouthBox)) : mouthBox;
+}
 
-  const region = includeCardGuide ? unionRect(mouthBox, computeCardGuideRect(mouthBox)) : mouthBox;
-
+/**
+ * Pixel-space crop for the still image, per "I don't need all the
+ * face." Clamped to the video's actual pixel bounds since the
+ * normalized region can extend slightly past the frame edge.
+ */
+function computeCropRect(region: NormalizedRect, videoWidth: number, videoHeight: number): CropRect {
   const rawX = region.x * videoWidth;
   const rawY = region.y * videoHeight;
   const rawW = region.w * videoWidth;
@@ -151,9 +173,13 @@ function computeCropRect(
 /**
  * Handoff Section 9. Runs after the gate evaluator has held all gates
  * passing for the required frame count and the on-screen ring has
- * finished filling. Every captured frame is drawn straight from the raw
- * video track to an OffscreenCanvas, never sourced from MediaRecorder
- * output (handoff Section 2, decision 3).
+ * finished filling. The still image's frames are drawn straight from
+ * the raw video track to an OffscreenCanvas, never sourced from
+ * MediaRecorder output (handoff Section 2, decision 3, still binding
+ * for the measurement image). A separate, purely supplementary video
+ * clip IS recorded via MediaRecorder concurrently (videoRecorder.ts) —
+ * that's a different artifact serving a different purpose, not a
+ * relaxation of the still-image constraint.
  */
 export async function runCaptureSequence(
   video: HTMLVideoElement,
@@ -164,10 +190,17 @@ export async function runCaptureSequence(
 ): Promise<CaptureResult> {
   const capturedAt = new Date().toISOString();
   const overlayLines = buildOverlayLines(snapshot, capturedAt, aux);
-  const crop = computeCropRect(snapshot.mouthBox, video.videoWidth, video.videoHeight, aux.cardboardMode);
+  const stillCropRect = computeNormalizedCropRegion(snapshot.mouthBox, aux.cardboardMode);
+  const crop = computeCropRect(stillCropRect, video.videoWidth, video.videoHeight);
 
   const exposureLockSuccess = await tryLockCapture(track);
   await sleep(CAPTURE_SEQUENCE.sensorSettleMs);
+
+  // Wraps the existing raw-frame burst below with the same 5-second
+  // window, recorded from the raw track (see videoRecorder.ts on why
+  // full-frame, not cropped). A failure to start returns null and the
+  // burst proceeds exactly as before, video is purely supplementary.
+  const recording = startVideoRecording(track);
 
   const interval = CAPTURE_SEQUENCE.burstDurationMs / CAPTURE_SEQUENCE.burstFrameCount;
 
@@ -177,9 +210,30 @@ export async function runCaptureSequence(
     if (i < CAPTURE_SEQUENCE.burstFrameCount - 1) await sleep(interval);
   }
 
+  const recordedVideo = recording ? await recording.stop().catch(() => null) : null;
+
   frames.sort((a, b) => b.score - a.score);
   const kept = frames.slice(0, CAPTURE_SEQUENCE.keepBestCount);
   const best = kept[0];
+
+  // Attempted only after the reflection-scanning burst above has
+  // already picked its best moment, so this can't add latency to that
+  // timing-sensitive loop. On success, the high-res photo replaces the
+  // scored canvas frame as the saved still (cropped to the same region
+  // so behavior stays consistent whether or not this path is
+  // available); on any failure (including simply unsupported, e.g.
+  // iOS/Safari today) bestBlob stays the existing canvas frame.
+  const highResPhoto = await takeHighResPhoto(track);
+  let bestBlob = best.blob;
+  let stillSource: CaptureMetadata['stillSource'] = 'canvas';
+  if (highResPhoto) {
+    try {
+      bestBlob = await cropAndOverlayBlob(highResPhoto, stillCropRect, overlayLines);
+      stillSource = 'imageCapture';
+    } catch {
+      // Decoding/cropping the high-res photo failed; keep the canvas frame.
+    }
+  }
 
   fireHaptics();
   playCaptureSound();
@@ -187,8 +241,8 @@ export async function runCaptureSequence(
   await releaseLock(track);
 
   return {
-    imageUrl: URL.createObjectURL(best.blob),
-    blob: best.blob,
+    imageUrl: URL.createObjectURL(bestBlob),
+    blob: bestBlob,
     metadata: {
       offAxisDeg: snapshot.offAxisDeg,
       offAxisVec: snapshot.offAxisVec,
@@ -208,6 +262,8 @@ export async function runCaptureSequence(
       cardboardMode: aux.cardboardMode,
       card: aux.card,
       lightDirection: aux.light?.direction2D ?? null,
+      video: recordedVideo,
+      stillSource,
     },
   };
 }

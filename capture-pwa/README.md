@@ -4,13 +4,15 @@ A guided smile capture PWA for shade-matching workflows. The live view is
 a "Smart Frame": a color-coded outline around the tracked mouth region
 (green once every active gate passes, amber otherwise) plus a prompt
 banner telling the clinician what to fix, and a compact numeric readout
-(pitch/yaw/roll/MAR) for anyone who wants the raw numbers instead of just
-the color. Capture is both automatic (fires once every gate has held
-passing for a few consecutive frames) and manual (a shutter button that
-works any time a face is detected, angle notwithstanding). Frames come
-straight off the raw camera track, never from encoded video, cropped to
-the mouth bounding box, with the pose/smile/card readout burned into the
-saved image.
+(pitch/yaw/roll/MAR/smile width) for anyone who wants the raw numbers
+instead of just the color. Capture is both automatic (fires once every
+gate has held passing for a few consecutive frames) and manual (a
+shutter button that works any time a face is detected, angle
+notwithstanding), with a screen flash + "Captured" badge confirming it
+happened either way. The still image comes straight off the raw camera
+track, never from encoded video, cropped to the mouth bounding box, with
+the pose/smile/card readout burned in; a supplementary full-frame video
+clip is recorded alongside every capture too (see "Video capture" below).
 
 A **Cardboard** toggle (top-left) switches the guidance between two
 modes:
@@ -115,16 +117,21 @@ truth `X_SIGN` is supposed to track.
   across a 5-second window (`CAPTURE_SEQUENCE`, config.ts) cropped to
   the tracked mouth bounding box, keeps the sharpest with the least
   clipping (the "manage reflections" step), burns the pose/smile/card
-  readout into it, and saves it with the full metadata set.
+  readout into it, and saves it with the full metadata set. A real video
+  clip records concurrently (see "Video capture" below), and a screen
+  flash + "Captured" badge confirms the shot the moment the burst
+  resolves, for both auto and manual capture, sound/haptics alone were
+  easy to miss.
 - The viewfinder keeps going after each shot. Up to `MAX_SESSION_CAPTURES`
   (8, in `src/config.ts`) per sitting; the button reads "Full" once you
   hit that.
 - **Gallery** (top-right) is always visible, not gated behind capturing
   something this session, tap it any time to open a grid of everything
   saved this session and before. Tap a thumbnail for the full image, its
-  metadata (pitch/yaw/roll, smile width, MAR, exposure lock, and, when
-  captured with the card, marker/flatness status and light direction), a
-  **Save to device** download, or **Delete**.
+  metadata (pitch/yaw/roll, smile width, MAR, exposure lock, image
+  source, and, when captured with the card, marker/flatness status and
+  light direction), the supplementary video (full-frame, with
+  size/duration), a **Save to device** download, or **Delete**.
 - All storage is `src/storage/captureStore.ts`, a thin IndexedDB
   wrapper. No network calls, no server. **Clear all** in the gallery
   wipes it.
@@ -166,14 +173,89 @@ Fixed by splitting into two metrics (`src/tracker/mediapipeTracker.ts`):
   0.08 enter / 0.05 exit) that only rules out a literally closed mouth.
 - `smileWidthRatio` — new: mouth width / interocular distance (outer eye
   corners), a stable per-face scale reference. This is the actual
-  "smiling wide" signal (`THRESHOLDS.smileWidth`, 1.2 enter / 1.05 exit),
-  closer to the AU12/zygomaticus-pull family of smile detectors. Both
-  metrics have to pass for the Smart Frame's `smile` gate.
+  "smiling wide" signal (`THRESHOLDS.smileWidth`), closer to the AU12/
+  zygomaticus-pull family of smile detectors. Both metrics have to pass
+  for the Smart Frame's `smile` gate.
 
-`THRESHOLDS.smileWidth` is a placeholder starting point, not calibrated
-against a bank of real smile photos across different face shapes (I
-don't have raw landmark data for the reference photos, only pixels), so
-treat it the same as the card/light placeholders: expect to retune.
+`THRESHOLDS.smileWidth` started at `1.2 enter / 1.05 exit`, confirmed
+on-device to still require an exaggerated stretch to pass, so it's now
+`1.0 enter / 0.9 exit` — real headroom, not a small nudge, while still
+failing a genuinely narrow/resting mouth (the codebase's own
+`smartFrameEvaluator.test.ts` uses `0.9` as that boundary case). Still a
+placeholder starting point, not calibrated against a bank of real smile
+photos across different face shapes (I don't have raw landmark data for
+the reference photos, only pixels, and burned-in `smileWidthRatio`
+values from one test session aren't a calibration set), so treat it the
+same as the card/light placeholders: expect another retune.
+
+## Video capture: full-frame, alongside the still image, not instead of it
+
+The spec calls for "automatic initiation of video recording ... a five
+second video to manage reflections" in addition to the image
+("stores the image or video file"). `src/capture/videoRecorder.ts`
+records a real `MediaRecorder` clip (`.webm`, mimeType feature-detected)
+concurrently with the existing raw-frame burst, same 5-second window,
+saved alongside the still image in every `StoredCapture` (`videoBlob`/
+`videoMimeType`/`videoDurationMs`). It is purely supplementary: the
+still image (raw canvas frames, never encoded) remains the only source
+used for color/shade measurement, per the original handoff constraint
+on why measurement frames are never sourced from encoded video (lossy
+compression can shift color).
+
+The video is recorded **full-frame**, not cropped to the mouth like the
+still image, and shown full-frame in the gallery too, no cropping there
+either. Recording the raw track directly is just `MediaRecorder(track)`,
+no extra work; a cropped version would need continuously redrawing the
+live frame to a canvas for the full 5 seconds to feed the recorder,
+real per-frame cost stacked on top of the tracker and gate evaluator
+already running every frame, for a cosmetic detail. Not worth it.
+
+A recording failure of any kind (unsupported browser, constructor
+throw, mid-recording error) degrades to `videoBlob: null` and never
+affects the still-image capture path.
+
+## Camera quality: cross-platform approach (Android + iOS)
+
+Needed to work well on both platforms, which ruled out the biggest
+single lever (`ImageCapture`, Chrome/Android only, unsupported on
+Safari/iOS entirely) as a full replacement for the capture pipeline.
+Two-layer approach instead:
+
+- **Baseline, both platforms** (`src/capture/deviceCamera.ts`,
+  `maximizeResolution`/`pickMaxResolutionConstraints`): after the
+  camera starts, read the negotiated track's own reported
+  `getCapabilities().width/height.max` and request exactly that,
+  instead of relying solely on the static `ideal: 3840/2160` hint some
+  browsers under-honor. Uses `ideal`, never `exact`, so it can't fail
+  outright on a device that can't hit its own reported max. No platform
+  gap, no timing risk.
+- **Progressive enhancement, Android/Chrome only**
+  (`src/capture/imageCapture.ts`, `takeHighResPhoto`): after the
+  existing burst-and-score loop has already picked its best moment
+  (untouched, zero added latency to that timing-sensitive logic),
+  attempt one `ImageCapture.takePhoto()` call for a full sensor-
+  resolution photo. On success it replaces the scored canvas frame as
+  the saved still (cropped to the same mouth region via
+  `cropAndOverlayBlob` in `frameScore.ts`, so behavior stays consistent
+  regardless of which pipeline produced it); on any failure, including
+  simply being unsupported (all of iOS/Safari today, and the Playwright
+  fake camera device), it falls back to the existing canvas frame
+  exactly as before. Which path produced a given capture is recorded as
+  `stillSource: 'imageCapture' | 'canvas'`, shown in the gallery.
+
+A full replacement of the burst with `ImageCapture` calls (every one of
+the 15 samples becoming a real photo capture) was considered and
+rejected: each call likely has real shutter/processing latency that
+doesn't fit the current ~333ms-per-frame budget, and it would still
+leave iOS on today's behavior while adding real risk to the working
+reflection-scanning logic on Android. The hero-shot approach above gets
+the quality win where it's available without touching that logic at
+all.
+
+Whether `tryLockCapture()`'s manual exposure/white-balance lock
+(`deviceCamera.ts`) carries over to `ImageCapture.takePhoto()`, or
+whether the photo pipeline can silently override it, is untested and
+device-dependent — flagged, not assumed either way.
 
 ## Config decision open (handoff Section 10)
 
@@ -213,6 +295,24 @@ operating the phone.
   thread, driven by `requestVideoFrameCallback`. Both layers are already
   pure and DOM-free, so moving them into a worker is straightforward but
   not done here.
+- **Video storage size isn't managed.** A 5-second full-frame clip is
+  materially larger than the existing cropped-mouth JPEG; at
+  `MAX_SESSION_CAPTURES = 8` per sitting this adds real IndexedDB growth
+  per session. No quota handling (`navigator.storage.estimate()`, etc.)
+  implemented, flagged as a real follow-up, not solved here.
+- **Video recording is unverified on real hardware.** Covered by a
+  round-trip storage test (`captureStore.test.ts`) and the fact that the
+  code path degrades to `null` on any failure, but actual encode
+  correctness, whether running the recorder concurrently with the
+  canvas burst loop causes frame drops on lower-end phones, and iOS
+  Safari's `MediaRecorder` support specifics in practice are all
+  real-device-only questions.
+- **`ImageCapture` quality gain is unverified.** No real Android device
+  was available to confirm `takeHighResPhoto()` actually produces a
+  meaningfully higher-resolution/quality result than the canvas
+  fallback, or how it behaves under real lighting/motion. The fallback
+  path (used on every platform without it) is exercised by the existing
+  smoke test; the enhancement path itself isn't.
 - **Without-cardboard capture is now confirmed working on a real
   device** (live view, pose readout, smile detection all exercised
   against real photos), which is how the smile-metric and direction-
@@ -243,11 +343,15 @@ Three-layer split:
   is a pure function (no DOM access): same tracker result + card
   detection + cardboard-mode flag + prior state in, same evaluation out.
   All tuning constants live in `src/config.ts`.
-- `src/ui/` and `src/capture/` — Layer 3. Camera setup, canvas overlay
-  (Smart Frame outline + card guide, `src/ui/overlay.ts`), card detection
-  (`src/capture/cardDetector.ts`) and light estimation
-  (`src/capture/lightEstimator.ts`), the burst/lock/score capture
-  sequence (`src/capture/captureSequence.ts`), and screens.
+- `src/ui/` and `src/capture/` — Layer 3. Camera setup
+  (`src/capture/deviceCamera.ts`, including the max-resolution
+  negotiation), canvas overlay (Smart Frame outline + card guide,
+  `src/ui/overlay.ts`), card detection (`src/capture/cardDetector.ts`)
+  and light estimation (`src/capture/lightEstimator.ts`), the
+  burst/lock/score capture sequence (`src/capture/captureSequence.ts`,
+  which also drives the supplementary video recording via
+  `src/capture/videoRecorder.ts` and the optional high-res still via
+  `src/capture/imageCapture.ts`), and screens.
 
 The MediaPipe model (`public/models/face_landmarker.task`), WASM runtime
 (`public/wasm/`), and vendored ArUco library (`public/vendor/js-aruco2/`)

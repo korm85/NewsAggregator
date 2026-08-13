@@ -14,7 +14,7 @@ function makeTracker(overrides: Partial<TrackerResult> = {}): TrackerResult {
     yawDeg: 0,
     pitchDeg: 0,
     mar: 0.25, // comfortably above the smileMar floor (0.08/0.05)
-    smileWidthRatio: 1.3, // comfortably above THRESHOLDS.smileWidth (1.2/1.05)
+    smileWidthRatio: 1.3, // comfortably above THRESHOLDS.smileWidth (1.0/0.9)
     landmarkChecksum: 1000,
     lipPoints: null,
     ...overrides,

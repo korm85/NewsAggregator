@@ -149,6 +149,79 @@ button.secondary {
   cursor: default;
 }
 
+/**
+ * Visual confirmation that a capture happened, for both manual and
+ * auto capture. Sound/haptics alone (captureSequence.ts) are easy to
+ * miss, especially for auto-capture where nothing else changes on
+ * screen. Class-toggle driven (.show), matching the .prompt-banner/
+ * .live-readout state-class convention already used in this file.
+ */
+.capture-confirm {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.capture-confirm .confirm-flash {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  opacity: 0;
+}
+
+.capture-confirm .confirm-toast {
+  opacity: 0;
+  transform: scale(0.85);
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid var(--green);
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--green);
+}
+
+.capture-confirm.show .confirm-flash {
+  animation: capture-flash-pulse 450ms ease-out;
+}
+
+.capture-confirm.show .confirm-toast {
+  animation: capture-toast-pop 700ms ease-out;
+}
+
+@keyframes capture-flash-pulse {
+  0% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes capture-toast-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  15% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  30% {
+    transform: scale(1);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 .top-bar,
 .top-bar-left {
   position: absolute;
@@ -264,6 +337,26 @@ button.secondary {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.video-wrap {
+  width: min(90vw, 420px);
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;
+}
+
+.video-wrap video {
+  width: 100%;
+  display: block;
+}
+
+.video-meta {
+  width: min(90vw, 420px);
+  text-align: left;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: -8px;
 }
 
 .metadata {

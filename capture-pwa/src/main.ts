@@ -119,6 +119,15 @@ function startViewfinder(): void {
   const torchSupported = isTorchSupported(track);
   refs.torchButton.classList.toggle('hidden', !torchSupported);
 
+  // Remove the .show class once the longer of the two child animations
+  // (the toast) finishes, rather than a setTimeout, so a rapid
+  // re-trigger (another capture landing before the first animation
+  // ends) can't race a timer that outlives the element's actual state.
+  const confirmToast = refs.captureConfirm.querySelector('.confirm-toast')!;
+  confirmToast.addEventListener('animationend', () => {
+    refs.captureConfirm.classList.remove('show');
+  });
+
   function updateSessionBadge(): void {
     // The Gallery button (top-bar) is always visible, saved captures
     // from earlier sessions should be reachable even before this
@@ -147,6 +156,7 @@ function startViewfinder(): void {
 
     runCaptureSequence(refs.video, track, latestSnapshot, currentFacingMode, aux)
       .then((result) => {
+        flashCaptureConfirmation(refs);
         const stored: StoredCapture = {
           id: makeCaptureId(),
           blob: result.blob,
@@ -167,6 +177,10 @@ function startViewfinder(): void {
           cardAllMarkersVisible: result.metadata.card?.allMarkersVisible ?? false,
           cardIsFlat: result.metadata.card?.isFlat ?? false,
           lightDirection: result.metadata.lightDirection,
+          videoBlob: result.metadata.video?.blob ?? null,
+          videoMimeType: result.metadata.video?.mimeType ?? null,
+          videoDurationMs: result.metadata.video?.durationMs ?? null,
+          stillSource: result.metadata.stillSource,
         };
         URL.revokeObjectURL(result.imageUrl);
         return saveCapture(stored);
@@ -305,6 +319,21 @@ function startViewfinder(): void {
   }
 
   scheduleNextFrame(refs.video, onFrame);
+}
+
+/**
+ * Visual confirmation that a capture happened, for both manual and
+ * auto capture (the two only entry points both funnel through
+ * performCapture()). Sound/haptics alone (captureSequence.ts) are easy
+ * to miss, especially for auto-capture where nothing else changes on
+ * screen. Forces a reflow before re-adding .show so a capture landing
+ * again before the previous animation finished restarts it instead of
+ * being a no-op (the class would already be present).
+ */
+function flashCaptureConfirmation(refs: ViewfinderRefs): void {
+  refs.captureConfirm.classList.remove('show');
+  void refs.captureConfirm.offsetWidth;
+  refs.captureConfirm.classList.add('show');
 }
 
 function scheduleNextFrame(video: HTMLVideoElement, cb: () => void): void {

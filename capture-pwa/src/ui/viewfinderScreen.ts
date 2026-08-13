@@ -4,6 +4,7 @@ export interface ViewfinderRefs {
   liveReadout: HTMLDivElement;
   promptBanner: HTMLDivElement;
   sessionBadge: HTMLDivElement;
+  captureConfirm: HTMLDivElement;
   galleryButton: HTMLButtonElement;
   captureButton: HTMLButtonElement;
   switchCameraButton: HTMLButtonElement;
@@ -48,6 +49,10 @@ export function renderViewfinderScreen(
       <div class="prompt-banner none" id="prompt-banner"></div>
       <div class="live-readout" id="live-readout">Loading tracker...</div>
       <button class="shutter-btn" id="capture-btn">Capture</button>
+      <div class="capture-confirm" id="capture-confirm">
+        <div class="confirm-flash"></div>
+        <div class="confirm-toast">&check; Captured</div>
+      </div>
     </div>
   `;
 
@@ -68,6 +73,7 @@ export function renderViewfinderScreen(
     liveReadout: root.querySelector<HTMLDivElement>('#live-readout')!,
     promptBanner: root.querySelector<HTMLDivElement>('#prompt-banner')!,
     sessionBadge: root.querySelector<HTMLDivElement>('#session-badge')!,
+    captureConfirm: root.querySelector<HTMLDivElement>('#capture-confirm')!,
     galleryButton,
     captureButton,
     switchCameraButton,

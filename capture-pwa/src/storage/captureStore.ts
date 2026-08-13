@@ -29,6 +29,23 @@ export interface StoredCapture {
   cardAllMarkersVisible: boolean;
   cardIsFlat: boolean;
   lightDirection: { x: number; y: number } | null;
+  /**
+   * Supplementary video clip recorded concurrently with the raw-frame
+   * burst, full camera frame (not cropped, see videoRecorder.ts). NOT
+   * used for color/shade measurement, the still image (blob above)
+   * remains the source of truth for that. Null when unsupported or
+   * recording failed for any reason.
+   */
+  videoBlob: Blob | null;
+  videoMimeType: string | null;
+  videoDurationMs: number | null;
+  /**
+   * Which pipeline produced the still image: the browser's dedicated
+   * photo pipeline (higher resolution, Chrome/Android only) or the
+   * original scored-video-frame fallback used everywhere else,
+   * including all of iOS/Safari today. See capture/imageCapture.ts.
+   */
+  stillSource: 'imageCapture' | 'canvas';
 }
 
 function openDb(): Promise<IDBDatabase> {

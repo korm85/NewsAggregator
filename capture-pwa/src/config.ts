@@ -97,13 +97,20 @@ export const THRESHOLDS = {
    * signal, replacing MAR as primary after MAR was confirmed on-device
    * to reject a valid wide smile (mar 0.248, teeth clearly visible,
    * rows just touching) while accepting a mouth-agape expression (mar
-   * 0.784) as no more "smiling" than the rejected one. Placeholder
-   * starting point, not calibrated against a bank of real smile photos
-   * across different face shapes, expect to retune.
+   * 0.784) as no more "smiling" than the rejected one. Still a
+   * placeholder, not calibrated against a bank of real smile photos
+   * across different face shapes: the first placeholder (1.2/1.05) was
+   * confirmed on-device to still require an exaggerated stretch to
+   * pass, so this is lowered with real headroom. 1.0 keeps failing a
+   * genuinely narrow/resting mouth (the smartFrameEvaluator.test.ts
+   * "must fail" case is 0.9) while roughly halving the stretch the old
+   * 1.2 required. Expect another retune once there's real calibration
+   * data (smileWidthRatio is already burned into every saved image and
+   * shown live, see mediapipeTracker.ts).
    */
   smileWidth: {
-    enterMin: 1.2,
-    exitMin: 1.05,
+    enterMin: 1.0,
+    exitMin: 0.9,
   } satisfies MinGateConfig,
 
   /**

@@ -58,12 +58,29 @@ function openLightbox(
   url: string,
   onChanged: () => void,
 ): void {
+  const videoUrl = capture.videoBlob ? URL.createObjectURL(capture.videoBlob) : null;
+  if (videoUrl) activeObjectUrls.push(videoUrl);
+
+  // Shown full-frame, no cropping: unlike the still image, this isn't
+  // worth reconstructing (see videoRecorder.ts on why the video is
+  // recorded full-frame in the first place).
+  const videoSection = videoUrl
+    ? `
+    <div class="video-wrap">
+      <video src="${videoUrl}" controls playsinline></video>
+    </div>
+    <div class="video-meta">${((capture.videoBlob?.size ?? 0) / 1e6).toFixed(1)} MB, ${(
+        (capture.videoDurationMs ?? 0) / 1000
+      ).toFixed(1)}s, full frame</div>`
+    : '';
+
   const overlay = document.createElement('div');
   overlay.className = 'lightbox';
   overlay.innerHTML = `
     <div class="result-image-wrap">
       <img src="${url}" alt="Captured smile" />
     </div>
+    ${videoSection}
     <div class="metadata">
       <div><span>Pitch / Yaw</span><span>${capture.pitchDeg.toFixed(1)} / ${capture.yawDeg.toFixed(1)} deg</span></div>
       <div><span>Roll</span><span>${capture.rollDeg.toFixed(1)} deg</span></div>
@@ -72,6 +89,7 @@ function openLightbox(
       <div><span>Mouth box</span><span>${(capture.mouthBoxWidth * 100).toFixed(0)}% x ${(capture.mouthBoxHeight * 100).toFixed(0)}%</span></div>
       <div><span>Exposure lock</span><span>${capture.exposureLockSuccess ? 'Locked' : 'Auto'}</span></div>
       <div><span>Capture mode</span><span>${capture.captureMode}</span></div>
+      <div><span>Image source</span><span>${capture.stillSource === 'imageCapture' ? 'High-res photo' : 'Video frame'}</span></div>
       ${
         capture.cardboardMode
           ? `<div><span>Card</span><span>${capture.cardAllMarkersVisible ? 'All markers' : `${capture.cardMarkersDetected.length} marker(s)`}, ${capture.cardIsFlat ? 'flat' : 'tilted'}</span></div>

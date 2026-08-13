@@ -12,7 +12,7 @@ export class CameraPermissionError extends Error {
 export async function startCamera(captureMode: 'front' | 'rear'): Promise<MediaStream> {
   const facingMode = captureMode === 'front' ? 'user' : 'environment';
   try {
-    return await navigator.mediaDevices.getUserMedia({
+    const stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: {
         facingMode,
@@ -20,8 +20,40 @@ export async function startCamera(captureMode: 'front' | 'rear'): Promise<MediaS
         height: { ideal: 2160 },
       },
     });
+    await maximizeResolution(stream.getVideoTracks()[0]);
+    return stream;
   } catch (err) {
     throw new CameraPermissionError(err);
+  }
+}
+
+/**
+ * The `ideal: 3840/2160` hint above is a common target, not necessarily
+ * the device's actual maximum: some browsers/devices under-honor a
+ * static hint or support more than it asks for. Re-querying the
+ * negotiated track's own reported capabilities and requesting exactly
+ * its max lets every device (Android and iOS both, this only reads
+ * standard MediaTrackCapabilities, no platform-specific API) hit its
+ * own ceiling rather than a guessed common denominator. Best-effort:
+ * failures here just leave the stream at whatever getUserMedia already
+ * negotiated, never break camera startup.
+ */
+export function pickMaxResolutionConstraints(
+  capabilities: MediaTrackCapabilities,
+): MediaTrackConstraints | null {
+  const width = capabilities.width?.max;
+  const height = capabilities.height?.max;
+  if (!width || !height) return null;
+  return { width: { ideal: width }, height: { ideal: height } };
+}
+
+async function maximizeResolution(track: MediaStreamTrack): Promise<void> {
+  try {
+    const capabilities = track.getCapabilities?.();
+    const constraints = capabilities && pickMaxResolutionConstraints(capabilities);
+    if (constraints) await track.applyConstraints(constraints);
+  } catch {
+    // Best effort; keep whatever getUserMedia already negotiated.
   }
 }
 
