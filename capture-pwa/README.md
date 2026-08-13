@@ -65,10 +65,14 @@ stays low). If a sign is backwards, flip `X_SIGN` / `Y_SIGN` in
   same 15/18 hysteresis band as before so it doesn't flicker at the
   boundary. This is guidance only, it does not gate the button.
 - Tap **Capture** whenever you want a shot, angle notwithstanding. The
-  app locks exposure/WB/focus if the platform allows it, bursts 6
-  full-resolution frames, keeps the sharpest, burns the pose readout
-  into it, and saves it. The button shows `...` while that's in flight
-  (about 1.3s) and won't double-fire.
+  app locks exposure/WB/focus at the *current* auto-computed values if
+  the platform allows it (`src/capture/deviceCamera.ts` reads
+  `track.getSettings()` before switching to manual, since switching
+  without a value snaps some devices to a near-black default instead of
+  preserving what the preview was showing), bursts 6 frames cropped to
+  the tracked mouth bounding box (not the full frame), keeps the
+  sharpest, burns the pose readout into it, and saves it. The button
+  shows `...` while that's in flight (about 1.3s) and won't double-fire.
 - The viewfinder keeps going after each shot. Shift your angle and tap
   again for another. Up to `MAX_SESSION_CAPTURES` (8, in
   `src/config.ts`) per sitting; the button reads "Full" once you hit

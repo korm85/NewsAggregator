@@ -13,17 +13,33 @@ export interface ScoredFrame {
   clippedFraction: number;
 }
 
+export interface CropRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * `crop` is a pixel-space rect on the raw video track (the mouth
+ * bounding box, at capture time), so the saved image is just the
+ * silhouette region, not the whole frame. Still drawn straight from the
+ * live video element at native pixel density within that region, never
+ * from an encoded/re-scaled source.
+ */
 export async function captureAndScoreFrame(
   video: HTMLVideoElement,
-  width: number,
-  height: number,
+  crop: CropRect,
   overlayLines?: string[],
 ): Promise<ScoredFrame> {
+  const width = Math.max(1, Math.round(crop.w));
+  const height = Math.max(1, Math.round(crop.h));
+
   const fullRes = new OffscreenCanvas(width, height);
   const fullCtx = fullRes.getContext('2d')!;
-  fullCtx.drawImage(video, 0, 0, width, height);
+  fullCtx.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, width, height);
 
-  const scoreWidth = 160;
+  const scoreWidth = Math.min(160, width);
   const scoreHeight = Math.max(1, Math.round((scoreWidth * height) / width));
   const scoreCanvas = new OffscreenCanvas(scoreWidth, scoreHeight);
   const scoreCtx = scoreCanvas.getContext('2d')!;
@@ -70,7 +86,8 @@ export async function captureAndScoreFrame(
 /**
  * Burns the live debug readout (same numbers /debug.html shows) into
  * the bottom of the saved image, so each photo carries the pose data it
- * was captured at.
+ * was captured at. Crops are small (a mouth region, not a full frame),
+ * so the line height floor is lower than a full-frame bar would need.
  */
 function drawOverlayBar(
   ctx: OffscreenCanvasRenderingContext2D,
@@ -78,7 +95,7 @@ function drawOverlayBar(
   height: number,
   lines: string[],
 ): void {
-  const lineHeight = Math.max(20, Math.round(height * 0.022));
+  const lineHeight = Math.max(14, Math.round(height * 0.05));
   const padding = Math.round(lineHeight * 0.6);
   const barHeight = lines.length * lineHeight + padding * 2;
 

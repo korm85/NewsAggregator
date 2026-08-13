@@ -1,6 +1,6 @@
 import { CAPTURE_MODE, CAPTURE_SEQUENCE } from '../config';
 import { releaseLock, tryLockCapture } from './deviceCamera';
-import { captureAndScoreFrame } from './frameScore';
+import { captureAndScoreFrame, type CropRect } from './frameScore';
 
 export interface CaptureMetadata {
   offAxisDeg: number;
@@ -26,7 +26,7 @@ export interface TrackerSnapshot {
   offAxisDeg: number;
   offAxisVec: { x: number; y: number };
   rollDeg: number;
-  mouthBox: { w: number; h: number } | null;
+  mouthBox: { x: number; y: number; w: number; h: number } | null;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -71,6 +71,36 @@ function buildOverlayLines(snapshot: TrackerSnapshot, capturedAt: string): strin
 }
 
 /**
+ * The saved image is cropped to the mouth bounding box (the same box
+ * the tracker computes, padded 15%), not the full camera frame, per
+ * "I don't need all the face." Clamped to the video's actual pixel
+ * bounds since the normalized box can extend slightly past the frame
+ * edge. Falls back to the full frame if no box was available at
+ * capture time (shouldn't happen, the shutter button is disabled
+ * without a detected face, but a snapshot with a null box must not
+ * crash the capture).
+ */
+function computeCropRect(
+  mouthBox: TrackerSnapshot['mouthBox'],
+  videoWidth: number,
+  videoHeight: number,
+): CropRect {
+  if (!mouthBox) return { x: 0, y: 0, w: videoWidth, h: videoHeight };
+
+  const rawX = mouthBox.x * videoWidth;
+  const rawY = mouthBox.y * videoHeight;
+  const rawW = mouthBox.w * videoWidth;
+  const rawH = mouthBox.h * videoHeight;
+
+  const x1 = Math.max(0, rawX);
+  const y1 = Math.max(0, rawY);
+  const x2 = Math.min(videoWidth, rawX + rawW);
+  const y2 = Math.min(videoHeight, rawY + rawH);
+
+  return { x: x1, y: y1, w: Math.max(1, x2 - x1), h: Math.max(1, y2 - y1) };
+}
+
+/**
  * Handoff Section 9. Runs after the gate evaluator has held all gates
  * passing for the required frame count and the on-screen ring has
  * finished filling. Every captured frame is drawn straight from the raw
@@ -84,17 +114,16 @@ export async function runCaptureSequence(
 ): Promise<CaptureResult> {
   const capturedAt = new Date().toISOString();
   const overlayLines = buildOverlayLines(snapshot, capturedAt);
+  const crop = computeCropRect(snapshot.mouthBox, video.videoWidth, video.videoHeight);
 
   const exposureLockSuccess = await tryLockCapture(track);
   await sleep(CAPTURE_SEQUENCE.sensorSettleMs);
 
-  const width = video.videoWidth;
-  const height = video.videoHeight;
   const interval = CAPTURE_SEQUENCE.burstDurationMs / CAPTURE_SEQUENCE.burstFrameCount;
 
   const frames = [];
   for (let i = 0; i < CAPTURE_SEQUENCE.burstFrameCount; i++) {
-    frames.push(await captureAndScoreFrame(video, width, height, overlayLines));
+    frames.push(await captureAndScoreFrame(video, crop, overlayLines));
     if (i < CAPTURE_SEQUENCE.burstFrameCount - 1) await sleep(interval);
   }
 
