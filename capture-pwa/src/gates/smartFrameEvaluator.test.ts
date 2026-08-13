@@ -14,7 +14,7 @@ function makeTracker(overrides: Partial<TrackerResult> = {}): TrackerResult {
     yawDeg: 0,
     pitchDeg: 0,
     mar: 0.25, // comfortably above the smileMar floor (0.08/0.05)
-    smileWidthRatio: 1.3, // comfortably above THRESHOLDS.smileWidth (1.0/0.9)
+    smileWidthRatio: 0.65, // comfortably above THRESHOLDS.smileWidth (0.55/0.45); real extreme-smile sample was 0.71
     landmarkChecksum: 1000,
     lipPoints: null,
     ...overrides,
@@ -89,7 +89,7 @@ describe('evaluateSmartFrame: smile gate (MAR floor + width ratio)', () => {
     // smile (high width ratio). Both metrics have to pass.
     const { evaluation } = run(
       createInitialSmartFrameState(),
-      makeTracker({ mar: 0.78, smileWidthRatio: 0.9 }),
+      makeTracker({ mar: 0.78, smileWidthRatio: 0.35 }),
       1,
       0,
     );
@@ -101,7 +101,7 @@ describe('evaluateSmartFrame: smile gate (MAR floor + width ratio)', () => {
     // close together, not agape), smileWidthRatio comfortably wide.
     const { evaluation } = run(
       createInitialSmartFrameState(),
-      makeTracker({ mar: 0.248, smileWidthRatio: 1.3 }),
+      makeTracker({ mar: 0.248, smileWidthRatio: 0.65 }),
       1,
       0,
     );
@@ -109,9 +109,11 @@ describe('evaluateSmartFrame: smile gate (MAR floor + width ratio)', () => {
   });
 
   it('passes a mouth-agape wide smile too (both metrics high)', () => {
+    // 0.71 is the real extreme-smile reference sample confirmed
+    // on-device (mouth wide open, teeth fully bared).
     const { evaluation } = run(
       createInitialSmartFrameState(),
-      makeTracker({ mar: 0.78, smileWidthRatio: 1.3 }),
+      makeTracker({ mar: 0.78, smileWidthRatio: 0.71 }),
       1,
       0,
     );
@@ -119,8 +121,8 @@ describe('evaluateSmartFrame: smile gate (MAR floor + width ratio)', () => {
   });
 
   it('holds the pass through the exit band once entered (hysteresis)', () => {
-    let { state, now } = run(createInitialSmartFrameState(), makeTracker({ mar: 0.25, smileWidthRatio: 1.3 }), 1, 0);
-    const { evaluation } = run(state, makeTracker({ mar: 0.06, smileWidthRatio: 1.1 }), 1, now);
+    let { state, now } = run(createInitialSmartFrameState(), makeTracker({ mar: 0.25, smileWidthRatio: 0.65 }), 1, 0);
+    const { evaluation } = run(state, makeTracker({ mar: 0.06, smileWidthRatio: 0.5 }), 1, now);
     expect(evaluation.gateStatuses.smile).toBe(true);
   });
 });

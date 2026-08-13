@@ -177,16 +177,21 @@ Fixed by splitting into two metrics (`src/tracker/mediapipeTracker.ts`):
   zygomaticus-pull family of smile detectors. Both metrics have to pass
   for the Smart Frame's `smile` gate.
 
-`THRESHOLDS.smileWidth` started at `1.2 enter / 1.05 exit`, confirmed
-on-device to still require an exaggerated stretch to pass, so it's now
-`1.0 enter / 0.9 exit` — real headroom, not a small nudge, while still
-failing a genuinely narrow/resting mouth (the codebase's own
-`smartFrameEvaluator.test.ts` uses `0.9` as that boundary case). Still a
-placeholder starting point, not calibrated against a bank of real smile
-photos across different face shapes (I don't have raw landmark data for
-the reference photos, only pixels, and burned-in `smileWidthRatio`
-values from one test session aren't a calibration set), so treat it the
-same as the card/light placeholders: expect another retune.
+`THRESHOLDS.smileWidth` went through three values before landing on real
+data. `1.2 enter / 1.05 exit`, then `1.0 enter / 0.9 exit`, both guessed
+assuming a wide smile scores above 1.0 on this ratio — wrong both times,
+confirmed on-device that neither ever passed even with an exaggerated
+smile. A real burned-in sample settled it: a deliberately maximal smile
+(mouth wide open, teeth fully bared top and bottom; pitchDeg 10.58, yawDeg
+0.44, rollDeg -2.80, mar 0.422) scored `smileWidth: 0.71`. Mouth width is
+naturally less than interocular distance for most faces even smiling
+hard, so the whole magnitude assumption was off, not just the exact
+number. Current value is `0.55 enter / 0.45 exit` — real headroom below
+that confirmed sample (it was an intentionally extreme test case, not the
+bar every capture needs to clear). Anchored to one real data point, not a
+calibration set across face shapes, so still expect further tuning, but
+this should actually pass on the next real test unlike the prior two
+guesses.
 
 ## Video capture: full-frame, alongside the still image, not instead of it
 

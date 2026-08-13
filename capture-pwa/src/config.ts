@@ -97,20 +97,26 @@ export const THRESHOLDS = {
    * signal, replacing MAR as primary after MAR was confirmed on-device
    * to reject a valid wide smile (mar 0.248, teeth clearly visible,
    * rows just touching) while accepting a mouth-agape expression (mar
-   * 0.784) as no more "smiling" than the rejected one. Still a
-   * placeholder, not calibrated against a bank of real smile photos
-   * across different face shapes: the first placeholder (1.2/1.05) was
-   * confirmed on-device to still require an exaggerated stretch to
-   * pass, so this is lowered with real headroom. 1.0 keeps failing a
-   * genuinely narrow/resting mouth (the smartFrameEvaluator.test.ts
-   * "must fail" case is 0.9) while roughly halving the stretch the old
-   * 1.2 required. Expect another retune once there's real calibration
-   * data (smileWidthRatio is already burned into every saved image and
-   * shown live, see mediapipeTracker.ts).
+   * 0.784) as no more "smiling" than the rejected one.
+   *
+   * The first two placeholders (1.2/1.05, then 1.0/0.9) were both
+   * guesses assuming a wide smile scores above 1.0 -- wrong. A real
+   * on-device sample of a deliberately extreme smile (mouth wide open,
+   * teeth fully bared top and bottom, burned-in overlay: pitchDeg
+   * 10.58, yawDeg 0.44, rollDeg -2.80, mar 0.422) scored smileWidth
+   * 0.71. Mouth width is naturally less than interocular distance for
+   * most faces even smiling hard, so the whole prior magnitude
+   * assumption was off, not just the exact number. 0.55 sits below
+   * that real sample with headroom (that photo was an intentionally
+   * maximal test case, not the bar every capture needs to clear), 0.45
+   * is the usual hysteresis exit band beneath it. Anchored to one real
+   * extreme-smile data point, not a calibration set across face
+   * shapes, still expect to retune (smileWidthRatio is burned into
+   * every saved image and shown live, see mediapipeTracker.ts).
    */
   smileWidth: {
-    enterMin: 1.0,
-    exitMin: 0.9,
+    enterMin: 0.55,
+    exitMin: 0.45,
   } satisfies MinGateConfig,
 
   /**
