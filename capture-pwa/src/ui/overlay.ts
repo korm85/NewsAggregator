@@ -98,6 +98,39 @@ function drawArrow(
 }
 
 /**
+ * Smart Frame spec: "when set to 'with cardboard,' the frame includes a
+ * designated area below the smile for the card". Placeholder sizing
+ * (2.5x mouth width, 22% of frame height) pending real card dimensions;
+ * drawn dashed to read as a distinct guide from the solid mouth outline,
+ * color-coded by the card gate's pass/fail state so the clinician can
+ * tell at a glance whether the card is positioned/flat correctly without
+ * reading the prompt text.
+ */
+export function drawCardGuide(
+  ctx: CanvasRenderingContext2D,
+  canvasW: number,
+  canvasH: number,
+  mouthBox: { x: number; y: number; w: number; h: number },
+  passing: boolean,
+): void {
+  const widthFrac = Math.min(0.85, mouthBox.w * 2.5);
+  const heightFrac = 0.22;
+  const centerX = mouthBox.x + mouthBox.w / 2;
+  const x = Math.max(0, Math.min(1 - widthFrac, centerX - widthFrac / 2)) * canvasW;
+  const y = Math.min(1 - heightFrac, mouthBox.y + mouthBox.h + 0.03) * canvasH;
+  const w = widthFrac * canvasW;
+  const h = heightFrac * canvasH;
+
+  ctx.save();
+  ctx.setLineDash([10, 8]);
+  ctx.strokeStyle = passing ? '#22c55e' : '#f59e0b';
+  ctx.lineWidth = 3;
+  roundRect(ctx, x, y, w, h, 12);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
  * Debug-style dot markers on the outer lip contour, matching what
  * /debug.html draws. Dots carry no directional meaning, so unlike the
  * arrow, no mirror-compensation is needed here: the overlay canvas gets

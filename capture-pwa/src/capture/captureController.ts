@@ -55,7 +55,11 @@ export class CaptureController {
       // Not wired into main.ts (see README "The capture loop"), so
       // there's no live currentFacingMode to thread through here;
       // falls back to config's default.
-      runCaptureSequence(video, track, snapshotForCapture, CAPTURE_MODE).then((result) => {
+      runCaptureSequence(video, track, snapshotForCapture, CAPTURE_MODE, {
+        cardboardMode: false,
+        card: null,
+        light: null,
+      }).then((result) => {
         this.phase = 'idle';
         this.ringProgress = 0;
         this.onComplete(result);

@@ -65,12 +65,18 @@ function openLightbox(
       <img src="${url}" alt="Captured smile" />
     </div>
     <div class="metadata">
-      <div><span>Off axis</span><span>${capture.offAxisDeg.toFixed(1)} deg</span></div>
-      <div><span>Off axis vector</span><span>x=${capture.offAxisVec.x.toFixed(3)} y=${capture.offAxisVec.y.toFixed(3)}</span></div>
+      <div><span>Pitch / Yaw</span><span>${capture.pitchDeg.toFixed(1)} / ${capture.yawDeg.toFixed(1)} deg</span></div>
       <div><span>Roll</span><span>${capture.rollDeg.toFixed(1)} deg</span></div>
+      <div><span>Smile (MAR)</span><span>${capture.mar.toFixed(3)}</span></div>
       <div><span>Mouth box</span><span>${(capture.mouthBoxWidth * 100).toFixed(0)}% x ${(capture.mouthBoxHeight * 100).toFixed(0)}%</span></div>
       <div><span>Exposure lock</span><span>${capture.exposureLockSuccess ? 'Locked' : 'Auto'}</span></div>
       <div><span>Capture mode</span><span>${capture.captureMode}</span></div>
+      ${
+        capture.cardboardMode
+          ? `<div><span>Card</span><span>${capture.cardAllMarkersVisible ? 'All markers' : `${capture.cardMarkersDetected.length} marker(s)`}, ${capture.cardIsFlat ? 'flat' : 'tilted'}</span></div>
+      <div><span>Light direction</span><span>${capture.lightDirection ? `x=${capture.lightDirection.x.toFixed(2)} y=${capture.lightDirection.y.toFixed(2)}` : 'unknown'}</span></div>`
+          : ''
+      }
       <div><span>Captured</span><span>${new Date(capture.capturedAt).toLocaleTimeString()}</span></div>
     </div>
     <div class="actions-row">

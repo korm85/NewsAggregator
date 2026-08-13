@@ -1,11 +1,16 @@
 import { CAPTURE_SEQUENCE } from '../config';
+import type { CardDetectionResult } from './cardDetector';
 import { releaseLock, tryLockCapture } from './deviceCamera';
 import { captureAndScoreFrame, type CropRect } from './frameScore';
+import type { LightEstimate } from './lightEstimator';
 
 export interface CaptureMetadata {
   offAxisDeg: number;
   offAxisVec: { x: number; y: number };
   rollDeg: number;
+  pitchDeg: number;
+  yawDeg: number;
+  mar: number;
   mouthBoxWidth: number;
   mouthBoxHeight: number;
   exposureLockSuccess: boolean;
@@ -14,6 +19,10 @@ export interface CaptureMetadata {
   captureMode: 'front' | 'rear';
   framesCaptured: number;
   framesKept: number;
+  /** Data Storage spec: "the calibration card detection data, and the computed light source direction". */
+  cardboardMode: boolean;
+  card: CardDetectionResult | null;
+  lightDirection: { x: number; y: number } | null;
 }
 
 export interface CaptureResult {
@@ -26,7 +35,23 @@ export interface TrackerSnapshot {
   offAxisDeg: number;
   offAxisVec: { x: number; y: number };
   rollDeg: number;
+  pitchDeg: number;
+  yawDeg: number;
+  mar: number;
   mouthBox: { x: number; y: number; w: number; h: number } | null;
+}
+
+/**
+ * Auxiliary calibration data available at the moment capture fires,
+ * gathered separately from the tracker (card detection needs a
+ * full-frame sample, not the mouth-cropped region the tracker works
+ * from). Both fields are null when cardboardMode is off or no card has
+ * been detected yet.
+ */
+export interface AuxCaptureData {
+  cardboardMode: boolean;
+  card: CardDetectionResult | null;
+  light: LightEstimate | null;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -57,17 +82,28 @@ function playCaptureSound(): void {
 }
 
 /**
- * Same numbers /debug.html shows live, burned into the saved image
- * itself so the pose data travels with the photo (v2: "save the data
- * you show in debug mode as an image").
+ * Same numbers the live view shows, burned into the saved image itself
+ * so the pose data travels with the photo (v2: "save the data you show
+ * in debug mode as an image"), extended with the Smart Frame spec's
+ * pitch/yaw split, MAR, and (when relevant) card status.
  */
-function buildOverlayLines(snapshot: TrackerSnapshot, capturedAt: string): string[] {
-  return [
-    `offAxisDeg: ${snapshot.offAxisDeg.toFixed(2)}`,
-    `offAxisVec: x=${snapshot.offAxisVec.x.toFixed(3)} y=${snapshot.offAxisVec.y.toFixed(3)}`,
-    `rollDeg: ${snapshot.rollDeg.toFixed(2)}`,
-    capturedAt,
+function buildOverlayLines(
+  snapshot: TrackerSnapshot,
+  capturedAt: string,
+  aux: AuxCaptureData,
+): string[] {
+  const lines = [
+    `pitchDeg: ${snapshot.pitchDeg.toFixed(2)}  yawDeg: ${snapshot.yawDeg.toFixed(2)}`,
+    `rollDeg: ${snapshot.rollDeg.toFixed(2)}  mar: ${snapshot.mar.toFixed(3)}`,
   ];
+  if (aux.cardboardMode) {
+    const cardText = aux.card
+      ? `card: ${aux.card.allMarkersVisible ? 'visible' : 'incomplete'}, ${aux.card.isFlat ? 'flat' : 'tilted'}`
+      : 'card: not detected';
+    lines.push(cardText);
+  }
+  lines.push(capturedAt);
+  return lines;
 }
 
 /**
@@ -112,9 +148,10 @@ export async function runCaptureSequence(
   track: MediaStreamTrack,
   snapshot: TrackerSnapshot,
   captureMode: 'front' | 'rear',
+  aux: AuxCaptureData,
 ): Promise<CaptureResult> {
   const capturedAt = new Date().toISOString();
-  const overlayLines = buildOverlayLines(snapshot, capturedAt);
+  const overlayLines = buildOverlayLines(snapshot, capturedAt, aux);
   const crop = computeCropRect(snapshot.mouthBox, video.videoWidth, video.videoHeight);
 
   const exposureLockSuccess = await tryLockCapture(track);
@@ -144,6 +181,9 @@ export async function runCaptureSequence(
       offAxisDeg: snapshot.offAxisDeg,
       offAxisVec: snapshot.offAxisVec,
       rollDeg: snapshot.rollDeg,
+      pitchDeg: snapshot.pitchDeg,
+      yawDeg: snapshot.yawDeg,
+      mar: snapshot.mar,
       mouthBoxWidth: snapshot.mouthBox?.w ?? 0,
       mouthBoxHeight: snapshot.mouthBox?.h ?? 0,
       exposureLockSuccess,
@@ -152,6 +192,9 @@ export async function runCaptureSequence(
       captureMode,
       framesCaptured: CAPTURE_SEQUENCE.burstFrameCount,
       framesKept: kept.length,
+      cardboardMode: aux.cardboardMode,
+      card: aux.card,
+      lightDirection: aux.light?.direction2D ?? null,
     },
   };
 }

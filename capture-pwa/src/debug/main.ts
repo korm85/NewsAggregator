@@ -59,7 +59,7 @@ async function init(): Promise<void> {
       const matrix = result.facialTransformationMatrixes?.[0]?.data;
 
       if (landmarks && matrix) {
-        const { offAxisDeg, offAxisVec, rollDeg } = computeAngles(matrix);
+        const { offAxisDeg, offAxisVec, rollDeg, yawDeg, pitchDeg } = computeAngles(matrix);
 
         ctx.fillStyle = '#2dd4bf';
         for (const idx of OUTER_LIP_INDICES) {
@@ -73,6 +73,8 @@ async function init(): Promise<void> {
         readout.textContent =
           `offAxisDeg: ${offAxisDeg.toFixed(2)}\n` +
           `offAxisVec: x=${offAxisVec.x.toFixed(3)} y=${offAxisVec.y.toFixed(3)}\n` +
+          `yawDeg: ${yawDeg.toFixed(2)}\n` +
+          `pitchDeg: ${pitchDeg.toFixed(2)}\n` +
           `rollDeg: ${rollDeg.toFixed(2)}`;
       } else {
         readout.textContent = 'No face detected';

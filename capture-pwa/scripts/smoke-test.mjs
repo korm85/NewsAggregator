@@ -84,16 +84,29 @@ try {
   await page.waitForTimeout(3000);
 
   const readoutText = await page.$eval('#live-readout', (el) => el.textContent);
+  const promptText = await page.$eval('#prompt-banner', (el) => el.textContent);
   const overlaySize = await page.$eval('#capture-overlay', (el) => ({ w: el.width, h: el.height }));
   const captureBtnEnabled = await page.$eval('#capture-btn', (el) => !el.disabled);
   console.log(
     '[smoke] after 3s of frames: readout=',
     readoutText,
+    'prompt=',
+    promptText,
     'overlaySize=',
     overlaySize,
     'captureBtnEnabled=',
     captureBtnEnabled,
   );
+
+  // Smart Frame spec: cardboard toggle should be present and safe to
+  // flip on/off without crashing the tracking loop (fake camera has no
+  // real card to detect, so this just checks the wiring, not detection).
+  await page.click('#cardboard-toggle');
+  await page.waitForTimeout(1000);
+  const cardGuideOk = await page.$eval('#capture-overlay', (el) => el.width > 0 && el.height > 0);
+  console.log('[smoke] cardboard mode on, overlay still rendering:', cardGuideOk);
+  await page.click('#cardboard-toggle');
+  await page.waitForTimeout(300);
 
   // Fake camera devices don't report torch capability, so the flash
   // button should stay hidden; the switch-camera button should always

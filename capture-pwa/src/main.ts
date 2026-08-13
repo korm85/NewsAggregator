@@ -3,10 +3,12 @@ import { renderDeniedScreen } from './ui/deniedScreen';
 import { renderLoadingScreen } from './ui/loadingScreen';
 import { renderViewfinderScreen, type ViewfinderRefs } from './ui/viewfinderScreen';
 import { renderGalleryScreen } from './ui/galleryScreen';
-import { drawLipDots } from './ui/overlay';
+import { drawCardGuide, drawOverlay } from './ui/overlay';
 import { MediaPipeTracker } from './tracker/mediapipeTracker';
-import type { TrackerResult } from './tracker/types';
-import { runCaptureSequence, type TrackerSnapshot } from './capture/captureSequence';
+import { runCaptureSequence, type AuxCaptureData, type TrackerSnapshot } from './capture/captureSequence';
+import { detectCard, initCardDetector, type CardDetectionResult } from './capture/cardDetector';
+import { estimateLightDirection, type LightEstimate } from './capture/lightEstimator';
+import { sampleVideoFrame } from './capture/frameSample';
 import {
   CameraPermissionError,
   isTorchSupported,
@@ -15,9 +17,15 @@ import {
   stopCamera,
 } from './capture/deviceCamera';
 import { saveCapture, type StoredCapture } from './storage/captureStore';
-import { CAPTURE_MODE, MAX_SESSION_CAPTURES, THRESHOLDS } from './config';
+import { evaluateSmartFrame } from './gates/smartFrameEvaluator';
+import { createInitialSmartFrameState, type SmartFrameGateState } from './gates/smartFrameTypes';
+import { CAPTURE_MODE, MAX_SESSION_CAPTURES } from './config';
 
 const root = document.getElementById('app')!;
+
+/** How often (ms) to re-run ArUco detection on a full-frame sample while cardboardMode is on. Detection is far more expensive than pose tracking, so it runs on a slower cadence than the per-frame tracker loop. */
+const CARD_CHECK_INTERVAL_MS = 200;
+const CARD_SAMPLE_MAX_WIDTH = 480;
 
 let stream: MediaStream | null = null;
 let tracker: MediaPipeTracker | null = null;
@@ -28,6 +36,10 @@ let loopActive = false;
 let currentFacingMode: 'front' | 'rear' = CAPTURE_MODE;
 
 async function main(): Promise<void> {
+  // Fire-and-forget: the cardboard toggle is off by default, so this
+  // doesn't need to block camera/tracker startup, just be ready by the
+  // time someone flips it on. detectCard() no-ops until it resolves.
+  void initCardDetector();
   renderPermissionScreen(root, onEnableCamera);
 }
 
@@ -55,13 +67,12 @@ function makeCaptureId(): string {
 }
 
 /**
- * Preliminary-release view: shows the same live numbers /debug.html
- * does (this is deliberately the "debug view" the guided box+prompt UI
- * was replaced with, it read faster and clearer), plus a manual shutter
- * button. Capture is user-triggered now, not auto-fired off a held
- * gate state; angle hysteresis (config.ts THRESHOLDS.angle) still
- * drives the green "Optimal" signal so there's still a clear go/no-go
- * cue, but it no longer gates whether the button works.
+ * Smart Frame release: the color-coded outline + prompt banner drive
+ * both automatic capture (fires once the gate evaluator has held all
+ * active gates passing for THRESHOLDS.holdFramesRequired frames) and a
+ * manual shutter button that works any time a face is detected,
+ * independent of gate state, per "add auto or manual capture, auto will
+ * record when conditions are met".
  */
 function startViewfinder(): void {
   if (!stream || !tracker) return;
@@ -71,8 +82,12 @@ function startViewfinder(): void {
   let capturing = false;
   let switchingCamera = false;
   let torchOn = false;
-  let angleOptimal = false;
+  let cardboardMode = false;
   let latestSnapshot: TrackerSnapshot | null = null;
+  let latestCard: CardDetectionResult | null = null;
+  let latestLight: LightEstimate | null = null;
+  let lastCardCheckMs = -Infinity;
+  let smartFrameState: SmartFrameGateState = createInitialSmartFrameState();
 
   const goToGallery = () => {
     loopActive = false;
@@ -81,9 +96,16 @@ function startViewfinder(): void {
 
   const refs = renderViewfinderScreen(root, currentFacingMode === 'front', {
     onDone: goToGallery,
-    onCapture: onCaptureTapped,
+    onCapture: () => performCapture(),
     onSwitchCamera: onSwitchCameraTapped,
     onToggleTorch: onToggleTorchTapped,
+    onToggleCardboard: (checked) => {
+      cardboardMode = checked;
+      latestCard = null;
+      latestLight = null;
+      lastCardCheckMs = -Infinity;
+      smartFrameState = createInitialSmartFrameState();
+    },
   });
   refs.video.srcObject = stream;
   refs.video.play().catch(() => {
@@ -108,14 +130,20 @@ function startViewfinder(): void {
     refs.doneButton.classList.remove('hidden');
   }
 
-  function onCaptureTapped(): void {
+  function performCapture(): void {
     if (capturing || switchingCamera || !latestSnapshot || sessionCaptureCount >= MAX_SESSION_CAPTURES) return;
     capturing = true;
     refs.captureButton.disabled = true;
     refs.captureButton.textContent = '...';
     refs.switchCameraButton.disabled = true;
 
-    runCaptureSequence(refs.video, track, latestSnapshot, currentFacingMode)
+    const aux: AuxCaptureData = {
+      cardboardMode,
+      card: cardboardMode ? latestCard : null,
+      light: cardboardMode ? latestLight : null,
+    };
+
+    runCaptureSequence(refs.video, track, latestSnapshot, currentFacingMode, aux)
       .then((result) => {
         const stored: StoredCapture = {
           id: makeCaptureId(),
@@ -123,11 +151,19 @@ function startViewfinder(): void {
           offAxisDeg: result.metadata.offAxisDeg,
           offAxisVec: result.metadata.offAxisVec,
           rollDeg: result.metadata.rollDeg,
+          pitchDeg: result.metadata.pitchDeg,
+          yawDeg: result.metadata.yawDeg,
+          mar: result.metadata.mar,
           mouthBoxWidth: result.metadata.mouthBoxWidth,
           mouthBoxHeight: result.metadata.mouthBoxHeight,
           exposureLockSuccess: result.metadata.exposureLockSuccess,
           captureMode: result.metadata.captureMode,
           capturedAt: result.metadata.capturedAt,
+          cardboardMode: result.metadata.cardboardMode,
+          cardMarkersDetected: result.metadata.card?.markersDetected ?? [],
+          cardAllMarkersVisible: result.metadata.card?.allMarkersVisible ?? false,
+          cardIsFlat: result.metadata.card?.isFlat ?? false,
+          lightDirection: result.metadata.lightDirection,
         };
         URL.revokeObjectURL(result.imageUrl);
         return saveCapture(stored);
@@ -194,35 +230,71 @@ function startViewfinder(): void {
     const trackerResult = tracker.detect(refs.video, now);
 
     if (trackerResult.detected) {
-      angleOptimal = angleOptimal
-        ? trackerResult.offAxisDeg <= THRESHOLDS.angle.exitMax
-        : trackerResult.offAxisDeg <= THRESHOLDS.angle.enterMax;
       latestSnapshot = {
         offAxisDeg: trackerResult.offAxisDeg,
         offAxisVec: trackerResult.offAxisVec,
         rollDeg: trackerResult.rollDeg,
+        pitchDeg: trackerResult.pitchDeg,
+        yawDeg: trackerResult.yawDeg,
+        mar: trackerResult.mar,
         mouthBox: trackerResult.mouthBox,
       };
     } else {
-      angleOptimal = false;
       latestSnapshot = null;
     }
 
+    if (cardboardMode && now - lastCardCheckMs >= CARD_CHECK_INTERVAL_MS) {
+      lastCardCheckMs = now;
+      const sample = sampleVideoFrame(refs.video, CARD_SAMPLE_MAX_WIDTH);
+      if (sample) {
+        latestCard = detectCard(sample);
+        latestLight = latestCard.allMarkersVisible
+          ? estimateLightDirection(sample, latestCard.cornerPoints as { x: number; y: number }[])
+          : null;
+      }
+    }
+
+    const evaluation = evaluateSmartFrame(
+      { tracker: trackerResult, card: cardboardMode ? latestCard : null, cardboardMode, nowMs: now },
+      smartFrameState,
+    );
+    smartFrameState = evaluation.state;
+
     overlayCtx.clearRect(0, 0, refs.overlayCanvas.width, refs.overlayCanvas.height);
-    drawLipDots(
+    drawOverlay(
       overlayCtx,
       refs.overlayCanvas.width,
       refs.overlayCanvas.height,
-      trackerResult.lipPoints,
-      angleOptimal ? '#22c55e' : '#f59e0b',
+      trackerResult.mouthBox,
+      evaluation.frameColor,
+      evaluation.arrowDirection,
+      evaluation.holdCount / evaluation.holdRequired,
     );
+    if (cardboardMode && trackerResult.mouthBox) {
+      drawCardGuide(
+        overlayCtx,
+        refs.overlayCanvas.width,
+        refs.overlayCanvas.height,
+        trackerResult.mouthBox,
+        evaluation.gateStatuses.card,
+      );
+    }
 
-    updateReadout(refs, trackerResult, angleOptimal);
+    updateReadout(refs, trackerResult, evaluation);
 
     // Don't fight the "capturing"/"switching"/"full" disabled states the
     // click handlers set while something's already in flight.
     if (!capturing && !switchingCamera && sessionCaptureCount < MAX_SESSION_CAPTURES) {
       refs.captureButton.disabled = !trackerResult.detected;
+    }
+
+    if (
+      evaluation.captureTriggered &&
+      !capturing &&
+      !switchingCamera &&
+      sessionCaptureCount < MAX_SESSION_CAPTURES
+    ) {
+      performCapture();
     }
 
     scheduleNextFrame(refs.video, onFrame);
@@ -242,7 +314,19 @@ function scheduleNextFrame(video: HTMLVideoElement, cb: () => void): void {
   }
 }
 
-function updateReadout(refs: ViewfinderRefs, tr: TrackerResult, optimal: boolean): void {
+function updateReadout(
+  refs: ViewfinderRefs,
+  tr: TrackerSnapshot & { detected: boolean },
+  evaluation: ReturnType<typeof evaluateSmartFrame>,
+): void {
+  refs.promptBanner.classList.remove('green', 'none');
+  if (evaluation.prompt) {
+    refs.promptBanner.textContent = evaluation.prompt;
+    if (evaluation.frameColor === 'green') refs.promptBanner.classList.add('green');
+  } else {
+    refs.promptBanner.classList.add('none');
+  }
+
   refs.liveReadout.classList.remove('optimal', 'none');
 
   if (!tr.detected) {
@@ -251,11 +335,12 @@ function updateReadout(refs: ViewfinderRefs, tr: TrackerResult, optimal: boolean
     return;
   }
 
+  const optimal = evaluation.frameColor === 'green';
   const status = optimal ? '  OPTIMAL' : '';
   refs.liveReadout.textContent =
-    `offAxisDeg: ${tr.offAxisDeg.toFixed(2)}${status}\n` +
-    `offAxisVec: x=${tr.offAxisVec.x.toFixed(3)} y=${tr.offAxisVec.y.toFixed(3)}\n` +
-    `rollDeg: ${tr.rollDeg.toFixed(2)}`;
+    `pitchDeg: ${tr.pitchDeg.toFixed(2)}  yawDeg: ${tr.yawDeg.toFixed(2)}${status}\n` +
+    `rollDeg: ${tr.rollDeg.toFixed(2)}  mar: ${tr.mar.toFixed(3)}\n` +
+    `hold: ${evaluation.holdCount}/${evaluation.holdRequired}`;
   if (optimal) refs.liveReadout.classList.add('optimal');
 }
 

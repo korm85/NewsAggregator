@@ -2,11 +2,13 @@ export interface ViewfinderRefs {
   video: HTMLVideoElement;
   overlayCanvas: HTMLCanvasElement;
   liveReadout: HTMLDivElement;
+  promptBanner: HTMLDivElement;
   sessionBadge: HTMLDivElement;
   doneButton: HTMLButtonElement;
   captureButton: HTMLButtonElement;
   switchCameraButton: HTMLButtonElement;
   torchButton: HTMLButtonElement;
+  cardboardToggle: HTMLInputElement;
 }
 
 export interface ViewfinderCallbacks {
@@ -14,6 +16,7 @@ export interface ViewfinderCallbacks {
   onCapture: () => void;
   onSwitchCamera: () => void;
   onToggleTorch: () => void;
+  onToggleCardboard: (checked: boolean) => void;
 }
 
 /**
@@ -34,10 +37,15 @@ export function renderViewfinderScreen(
       <div class="top-bar-left">
         <button id="switch-camera-btn" title="Switch camera">Switch</button>
         <button id="torch-btn" class="hidden" title="Toggle flash">Flash</button>
+        <label class="cardboard-toggle">
+          <input type="checkbox" id="cardboard-toggle" />
+          Cardboard
+        </label>
       </div>
       <div class="top-bar">
         <button id="done-btn" class="hidden">Done</button>
       </div>
+      <div class="prompt-banner none" id="prompt-banner"></div>
       <div class="live-readout" id="live-readout">Loading tracker...</div>
       <button class="shutter-btn" id="capture-btn">Capture</button>
     </div>
@@ -51,15 +59,19 @@ export function renderViewfinderScreen(
   switchCameraButton.onclick = callbacks.onSwitchCamera;
   const torchButton = root.querySelector<HTMLButtonElement>('#torch-btn')!;
   torchButton.onclick = callbacks.onToggleTorch;
+  const cardboardToggle = root.querySelector<HTMLInputElement>('#cardboard-toggle')!;
+  cardboardToggle.onchange = () => callbacks.onToggleCardboard(cardboardToggle.checked);
 
   return {
     video: root.querySelector<HTMLVideoElement>('#capture-video')!,
     overlayCanvas: root.querySelector<HTMLCanvasElement>('#capture-overlay')!,
     liveReadout: root.querySelector<HTMLDivElement>('#live-readout')!,
+    promptBanner: root.querySelector<HTMLDivElement>('#prompt-banner')!,
     sessionBadge: root.querySelector<HTMLDivElement>('#session-badge')!,
     doneButton,
     captureButton,
     switchCameraButton,
     torchButton,
+    cardboardToggle,
   };
 }

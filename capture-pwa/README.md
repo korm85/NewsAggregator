@@ -1,25 +1,42 @@
 # Gavan Guided Capture (preliminary)
 
-A guided smile capture PWA per the [handoff spec](../). The main screen
-is deliberately the same live view `/debug.html` always had: the video
-feed, dots tracking the outer lip contour, and the raw pose numbers
-(`offAxisDeg`, `offAxisVec`, `rollDeg`) on screen at all times, colored
-green with an "OPTIMAL" tag once you're within 15 degrees of square-on.
-A visible shutter button captures on demand, no auto-fire, so it's
-always clear both what the current angle is and when you chose to
-shoot. Frames come straight off the raw camera track, never from
-encoded video, to feed a shade-matching pipeline.
+A guided smile capture PWA for shade-matching workflows. The live view is
+a "Smart Frame": a color-coded outline around the tracked mouth region
+(green once every active gate passes, amber otherwise) plus a prompt
+banner telling the clinician what to fix, and a compact numeric readout
+(pitch/yaw/roll/MAR) for anyone who wants the raw numbers instead of just
+the color. Capture is both automatic (fires once every gate has held
+passing for a few consecutive frames) and manual (a shutter button that
+works any time a face is detected, angle notwithstanding). Frames come
+straight off the raw camera track, never from encoded video, cropped to
+the mouth bounding box, with the pose/smile/card readout burned into the
+saved image.
+
+A **Cardboard** toggle (top-left) switches the guidance between two
+modes:
+
+- **Without cardboard**: the Smart Frame gates on head pose (pitch/yaw,
+  each independently within 15 degrees) and smile width (Mouth Aspect
+  Ratio, so a closed or half smile doesn't pass as "smiling").
+- **With cardboard**: adds a dashed guide area below the mouth showing
+  where to hold the calibration card, and a gate requiring all of its
+  ArUco fiducial markers to be visible and the card held flat (checked
+  via the marker quad's diagonal ratio). The system also estimates the
+  light source direction from a specular highlight on the card, stored
+  alongside the image as auxiliary color-accuracy data.
 
 The viewfinder keeps going after each shot (instead of stopping) so you
-can vary your angle and build up a set to choose from, each with that
-same pose readout burned into the image itself. Everything is saved
-on-device via IndexedDB, a gallery screen lets you review, save to
+can vary your angle and build up a set to choose from. Everything is
+saved on-device via IndexedDB, with the pose/smile/card/light data
+attached to each capture; a gallery screen lets you review, save to
 device, or delete, and nothing is ever uploaded.
 
 This is still a prototype: the core capture loop works end to end and
 is worth trying, but several items are deliberately simplified or
-unverified. See "What's simplified" below before treating this as
-production-ready.
+unverified, especially around the calibration card (no real card design
+to test against yet) and light estimation (an intentionally simple
+heuristic, not photometric stereo). See "What's simplified" below before
+treating this as production-ready.
 
 ## Running it
 
@@ -48,55 +65,67 @@ node scripts/offline-test.mjs   # confirms the app (incl. camera + model) loads 
 
 ## Verifying angle on a real device
 
-The main view and `/debug.html` now read the same numbers off the same
-code path, so either one works for this. Follow handoff Section 5's
-steps: face the camera straight on (`offAxisDeg` should read near 0),
-turn left and right (it should rise similarly both ways, `offAxisVec.x`
-should flip sign), tilt the chin up and down (`offAxisVec.y` should
-flip sign), tilt the head sideways (`rollDeg` changes, `offAxisDeg`
-stays low). If a sign is backwards, flip `X_SIGN` / `Y_SIGN` in
-`src/tracker/mediapipeTracker.ts`, everything else reads from
-`offAxisVec`, nothing else needs to change.
+`/debug.html` and the live view's numeric readout read off the same
+tracker code path. Face the camera straight on (`pitchDeg`/`yawDeg`
+should read near 0), turn left and right (`yawDeg` should rise similarly
+both ways and flip sign), tilt the chin up and down (`pitchDeg` should
+flip sign), tilt the head sideways (`rollDeg` changes, pitch/yaw stay
+low). If a sign is backwards, flip `X_SIGN` / `Y_SIGN` in
+`src/tracker/mediapipeTracker.ts`; everything else reads from the
+derived angles, nothing else needs to change.
 
 ## The capture loop
 
 - **Switch** (top-left) swaps front/rear camera at any time, no reload.
-  Requeries `getUserMedia` with the other `facingMode`, stops the old
-  track, and starts a fresh viewfinder session (session capture count
-  and badge reset; anything already saved stays in the gallery).
-- **Flash** (top-left, next to Switch) toggles torch mode via
-  `track.applyConstraints({advanced:[{torch}]})`. Only shown when the
-  active camera actually reports torch support, front cameras almost
-  never do, so expect it to only appear on rear.
-- Watch the numbers. `offAxisDeg` turns the readout (and the lip dots)
-  green with an "OPTIMAL" tag once you're within 15 degrees, using the
-  same 15/18 hysteresis band as before so it doesn't flicker at the
-  boundary. This is guidance only, it does not gate the button.
-- Tap **Capture** whenever you want a shot, angle notwithstanding. The
-  app locks exposure/WB/focus at the *current* auto-computed values if
-  the platform allows it (`src/capture/deviceCamera.ts` reads
+- **Flash** (top-left) toggles torch mode. Only shown when the active
+  camera actually reports torch support, front cameras almost never do.
+- **Cardboard** (top-left) toggles the with/without-card Smart Frame
+  mode described above. Switching it resets the hold-to-capture state so
+  a half-finished hold under the old gate set doesn't carry over.
+- Watch the Smart Frame outline and prompt banner. Once every active
+  gate holds passing for `THRESHOLDS.holdFramesRequired` consecutive
+  frames, capture fires automatically. You can also tap **Capture** at
+  any time regardless of gate state, this is guidance, not a lock.
+- Capture locks exposure/WB/focus at the *current* auto-computed values
+  if the platform allows it (`src/capture/deviceCamera.ts` reads
   `track.getSettings()` before switching to manual, since switching
   without a value snaps some devices to a near-black default instead of
-  preserving what the preview was showing), bursts 6 frames cropped to
-  the tracked mouth bounding box (not the full frame), keeps the
-  sharpest, burns the pose readout into it, and saves it. The button
-  shows `...` while that's in flight (about 1.3s) and won't double-fire.
-- The viewfinder keeps going after each shot. Shift your angle and tap
-  again for another. Up to `MAX_SESSION_CAPTURES` (8, in
-  `src/config.ts`) per sitting; the button reads "Full" once you hit
-  that.
+  preserving what the preview was showing), then samples raw frames
+  across a 5-second window (`CAPTURE_SEQUENCE`, config.ts) cropped to
+  the tracked mouth bounding box, keeps the sharpest with the least
+  clipping (the "manage reflections" step), burns the pose/smile/card
+  readout into it, and saves it with the full metadata set.
+- The viewfinder keeps going after each shot. Up to `MAX_SESSION_CAPTURES`
+  (8, in `src/config.ts`) per sitting; the button reads "Full" once you
+  hit that.
 - Tap **Done** any time to open the gallery: a grid of everything saved
-  this session and before. Tap a thumbnail for the full image, its pose
-  metadata, a **Save to device** download, or **Delete**.
+  this session and before. Tap a thumbnail for the full image, its
+  metadata (pitch/yaw/roll/MAR, exposure lock, and, when captured with
+  the card, marker/flatness status and light direction), a **Save to
+  device** download, or **Delete**.
 - All storage is `src/storage/captureStore.ts`, a thin IndexedDB
   wrapper. No network calls, no server. **Clear all** in the gallery
   wipes it.
 
-Auto-triggered capture (hold-to-fire off the full 7-gate system) is
-still in the codebase (`src/capture/captureController.ts`,
-`src/gates/`, still unit tested) but not wired into the live view for
-this preliminary release, the manual button read clearer and felt more
-responsive in testing.
+The older 7-gate system (`src/gates/gateEvaluator.ts`,
+`src/capture/captureController.ts`, distance/centering/stability/exposure)
+predates the Smart Frame spec and is no longer wired into `main.ts`, it's
+kept compiling and unit-tested but superseded by `src/gates/smartFrameEvaluator.ts`.
+
+## ArUco loading: why it's a vendored `<script>`, not an import
+
+`js-aruco2` is a legacy global-scope library (`this.AR = AR` at module
+top level, written to run as a plain `<script>` tag where `this` is
+`window`). Importing it through Vite/Rollup's CommonJS interop builds
+without error but breaks at runtime, the interop wrapper doesn't bind
+`this` to the module's exports the way Node's real CJS wrapper does, so
+`AR` comes back `undefined`. `public/vendor/js-aruco2/` vendors the
+library's three source files (`cv.js`, `aruco.js`,
+`dictionaries/aruco_mip_36h12.js`) verbatim; `src/capture/cardDetector.ts`
+loads them as real script tags in that order at startup and reads
+`window.AR`, sidestepping the interop entirely. They're precached by the
+service worker the same way the MediaPipe model/wasm assets are, so card
+detection still works offline.
 
 ## Config decision open (handoff Section 10)
 
@@ -109,52 +138,59 @@ operating the phone.
 
 ## What's simplified
 
+- **Calibration card layout is a placeholder.** `CARD_CONFIG` in
+  `src/config.ts` assumes 4 corner markers (IDs 0-3, mapped in order to
+  TL/TR/BR/BL) and a centered reference patch for light estimation. None
+  of this is calibrated against a real printed card, there isn't one to
+  test against yet. Replace once the real card design exists, per "off
+  the shelf now, replace if inadequate".
+- **Light direction is a coarse 2D heuristic, not photometric stereo.**
+  `src/capture/lightEstimator.ts` finds the brightest spot inside the
+  expected reference-patch region and reports its offset from center.
+  That's a real signal (a highlight shifted toward one side means the
+  light leans that way) but it is explicitly not a solved 3D light
+  vector, there's no calibrated rig here for that.
+- **MAR (smile-width) threshold is an initial estimate.**
+  `THRESHOLDS.smileMar` in `src/config.ts` hasn't been checked against a
+  bank of real smile photos yet.
 - **No Web Worker.** The tracker and gate evaluator run on the main
-  thread, driven by `requestVideoFrameCallback`. The handoff calls for
-  moving both into a worker to protect the 24fps target on mid-range
-  Android; that move is straightforward (both layers are already pure
-  and DOM-free) but not done here.
-- **No live directional guidance right now.** `src/gates/directionPrompt.ts`
-  (left/right/up/down prompts derived from `offAxisVec`) still exists and
-  is unit-tested, but isn't wired into this preliminary manual-capture
-  view, you read the raw numbers instead. Its sign convention is still
-  unverified against a real tester either way (handoff Section 8).
-- **Stability gate uses an approximation.** `TrackerResult.landmarkChecksum`
-  is a scalar sum of lip landmark pixel coordinates, not full landmark
-  positions, so "mean landmark movement in px" is estimated from its
-  frame-to-frame delta rather than computed exactly. Documented in
-  `src/gates/gateEvaluator.ts`. (Not used by the live view right now;
-  still covered by its own unit tests.)
+  thread, driven by `requestVideoFrameCallback`. Both layers are already
+  pure and DOM-free, so moving them into a worker is straightforward but
+  not done here.
 - **Full end-to-end capture is unverified in this environment.** No real
-  camera/face was available to confirm the whole
-  capture-to-burn-in-to-gallery pipeline on a live shot; it's covered by
-  unit tests (gate hysteresis, capture-store round-trips) and a headless
-  smoke test (app loads, tracker initializes, button reflects
-  face-detected state), but not an actual photo.
-- **Unit tests cover the gate evaluator's core behavior** (angle
-  hysteresis boundaries at 15/18, prompt priority, the 800ms minimum
-  display lock, capture triggering, roll hysteresis, distance copy) and
-  the capture store (save/list/delete/clear round-trips) but not every
-  gate's hysteresis band exhaustively.
+  camera/face/card was available to confirm the whole
+  capture-to-burn-in-to-gallery pipeline, including actual ArUco
+  detection, on a live shot; it's covered by unit tests (gate hysteresis
+  for pitch/yaw/MAR/card, capture-store round-trips) and headless smoke
+  tests (app loads, tracker initializes, cardboard toggle doesn't crash
+  the loop), but not an actual photo of an actual card.
+- **Unit tests cover gate evaluator behavior** (pitch/yaw hysteresis
+  boundaries at 15/18, MAR hysteresis, the cardboard toggle's effect on
+  which gates count, capture triggering, prompt priority and the 800ms
+  minimum display lock) but not every hysteresis band exhaustively, and
+  not ArUco detection accuracy itself (that's the vendored library's
+  concern, not this codebase's).
 
 ## Architecture
 
-Matches the handoff's three-layer split:
+Three-layer split:
 
 - `src/tracker/` — Layer 1. `MediaPipeTracker` is the only file that
   imports `@mediapipe/tasks-vision`; everything else only sees the
-  `TrackerResult` interface in `src/tracker/types.ts`, so the engine can
-  be swapped later without touching gates or UI.
-- `src/gates/` — Layer 2. `evaluateGates` in `gateEvaluator.ts` is a
-  pure function (no DOM access): same `TrackerResult` + exposure number
-  + prior state in, same evaluation out. All tuning constants live in
-  `src/config.ts`.
-- `src/ui/` and `src/capture/` — Layer 3. Camera setup, canvas overlay,
-  the burst/lock/score capture sequence (`src/capture/captureSequence.ts`),
-  and screens. The auto-trigger hold/ring state machine
-  (`src/capture/captureController.ts`) still exists but isn't wired into
-  `main.ts` for this preliminary manual-capture release.
+  `TrackerResult` interface in `src/tracker/types.ts` (now including
+  `pitchDeg`/`yawDeg`/`mar` alongside the original angle/roll fields), so
+  the engine can be swapped later without touching gates or UI.
+- `src/gates/` — Layer 2. `evaluateSmartFrame` in `smartFrameEvaluator.ts`
+  is a pure function (no DOM access): same tracker result + card
+  detection + cardboard-mode flag + prior state in, same evaluation out.
+  All tuning constants live in `src/config.ts`.
+- `src/ui/` and `src/capture/` — Layer 3. Camera setup, canvas overlay
+  (Smart Frame outline + card guide, `src/ui/overlay.ts`), card detection
+  (`src/capture/cardDetector.ts`) and light estimation
+  (`src/capture/lightEstimator.ts`), the burst/lock/score capture
+  sequence (`src/capture/captureSequence.ts`), and screens.
 
-The MediaPipe model (`public/models/face_landmarker.task`) and WASM
-runtime (`public/wasm/`) are bundled locally and precached by the
-service worker, no CDN calls, works offline.
+The MediaPipe model (`public/models/face_landmarker.task`), WASM runtime
+(`public/wasm/`), and vendored ArUco library (`public/vendor/js-aruco2/`)
+are all bundled locally and precached by the service worker, no CDN
+calls, works offline.

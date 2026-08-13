@@ -33,6 +33,12 @@ export interface MaxGateConfig {
   exitMax: number;
 }
 
+/** Opposite of MaxGateConfig: must be AT LEAST this value to pass, exit band is lower than enter. */
+export interface MinGateConfig {
+  enterMin: number;
+  exitMin: number;
+}
+
 export const THRESHOLDS = {
   /** Mouth box width as a fraction of frame width. */
   distance: {
@@ -54,11 +60,36 @@ export const THRESHOLDS = {
     exitMax: 18,
   } satisfies MaxGateConfig,
 
+  /**
+   * Separate pitch/yaw thresholds (Smart Frame spec: max 15 degrees
+   * variance on each axis independently, not the combined offAxisDeg
+   * cone). Both gates use abs(pitchDeg)/abs(yawDeg).
+   */
+  pitch: {
+    enterMax: 15,
+    exitMax: 18,
+  } satisfies MaxGateConfig,
+  yaw: {
+    enterMax: 15,
+    exitMax: 18,
+  } satisfies MaxGateConfig,
+
   /** Roll in degrees. */
   roll: {
     enterMax: 5,
     exitMax: 6,
   } satisfies MaxGateConfig,
+
+  /**
+   * Mouth Aspect Ratio must be at least this to count as "smiling wide
+   * enough to show teeth" rather than a closed/half smile. Initial
+   * estimate, not yet calibrated against real captures, expect to
+   * retune once there's a bank of real smile photos to check it against.
+   */
+  smileMar: {
+    enterMin: 0.35,
+    exitMin: 0.28,
+  } satisfies MinGateConfig,
 
   /**
    * Stability threshold in "checksum units" (see TrackerResult.landmarkChecksum).
@@ -96,9 +127,44 @@ export const THRESHOLDS = {
 export const CAPTURE_SEQUENCE = {
   ringFillMs: 400,
   sensorSettleMs: 500,
-  burstFrameCount: 6,
-  burstDurationMs: 400,
+  /**
+   * Smart Frame spec: 5 seconds "to manage reflections". Sampled as raw
+   * canvas frames across the window (never MediaRecorder-encoded video,
+   * see handoff Section 2 decision 3 on why: 8-bit lossy 4:2:0 encoding
+   * would corrupt the color data this product measures), scored the
+   * same way the original short burst was, so the frame that ends up
+   * saved has no specular reflection instead of just being sharp.
+   */
+  burstFrameCount: 15,
+  burstDurationMs: 5000,
   keepBestCount: 3,
+} as const;
+
+/**
+ * Calibration-card (ArUco) detection and light-direction estimation.
+ * PLACEHOLDER values pending the real card's physical design/marker
+ * layout, per "off the shelf now, replace if inadequate": these get the
+ * mechanism working end to end, not tuned to a specific printed card.
+ */
+export const CARD_CONFIG = {
+  dictionaryName: 'ARUCO_MIP_36h12',
+  maxHammingDistance: 5,
+  /** Marker IDs expected on the card. Placeholder: 4 corner markers. */
+  expectedMarkerIds: [0, 1, 2, 3] as number[],
+  /**
+   * Normalized position (0-1, relative to the quad spanned by the 4
+   * corner markers) of a small glossy/white reference patch used to
+   * estimate light direction from its specular highlight. Placeholder
+   * center position pending real card layout.
+   */
+  lightReferencePatch: { x: 0.5, y: 0.5, radiusFraction: 0.08 },
+  /**
+   * How square-on the marker quad's two diagonals must be to each
+   * other (ratio of lengths, 1.0 = perfectly flat/frontal) to count as
+   * "card held flat", per the spec's "guides the clinician to ensure
+   * the patient holds it flat".
+   */
+  maxDiagonalRatioDeviation: 0.25,
 } as const;
 
 /**

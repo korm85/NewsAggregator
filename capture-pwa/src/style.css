@@ -100,7 +100,7 @@ button.secondary {
 
 .live-readout {
   position: absolute;
-  top: max(56px, calc(env(safe-area-inset-top) + 48px));
+  top: max(108px, calc(env(safe-area-inset-top) + 100px));
   left: 50%;
   transform: translateX(-50%);
   z-index: 3;
@@ -190,6 +190,50 @@ button.secondary {
 .top-bar-left button:disabled,
 .top-bar button:disabled {
   opacity: 0.5;
+}
+
+.cardboard-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cardboard-toggle input {
+  margin: 0;
+}
+
+.prompt-banner {
+  position: absolute;
+  top: max(56px, calc(env(safe-area-inset-top) + 48px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid var(--amber);
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text);
+  max-width: min(80vw, 360px);
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.prompt-banner.green {
+  border-color: var(--green);
+  background: rgba(15, 61, 46, 0.85);
+}
+
+.prompt-banner.none {
+  display: none;
 }
 
 .session-badge {

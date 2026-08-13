@@ -14,11 +14,20 @@ export interface StoredCapture {
   offAxisDeg: number;
   offAxisVec: { x: number; y: number };
   rollDeg: number;
+  pitchDeg: number;
+  yawDeg: number;
+  mar: number;
   mouthBoxWidth: number;
   mouthBoxHeight: number;
   exposureLockSuccess: boolean;
   captureMode: 'front' | 'rear';
   capturedAt: string;
+  /** Data Storage spec: calibration card detection data + light source direction. */
+  cardboardMode: boolean;
+  cardMarkersDetected: number[];
+  cardAllMarkersVisible: boolean;
+  cardIsFlat: boolean;
+  lightDirection: { x: number; y: number } | null;
 }
 
 function openDb(): Promise<IDBDatabase> {
