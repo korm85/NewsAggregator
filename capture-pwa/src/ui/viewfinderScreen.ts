@@ -37,16 +37,12 @@ export function renderViewfinderScreen(
       </div>
       <div class="top-bar">
         <button id="done-btn" class="hidden">Done</button>
-        <button id="debug-link">Debug</button>
       </div>
       <div class="live-readout" id="live-readout">Loading tracker...</div>
       <button class="shutter-btn" id="capture-btn">Capture</button>
     </div>
   `;
 
-  root.querySelector<HTMLButtonElement>('#debug-link')!.onclick = () => {
-    window.location.href = `${import.meta.env.BASE_URL}debug.html`;
-  };
   const doneButton = root.querySelector<HTMLButtonElement>('#done-btn')!;
   doneButton.onclick = callbacks.onDone;
   const captureButton = root.querySelector<HTMLButtonElement>('#capture-btn')!;
