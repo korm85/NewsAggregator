@@ -19,7 +19,7 @@ import {
 import { saveCapture, type StoredCapture } from './storage/captureStore';
 import { evaluateSmartFrame } from './gates/smartFrameEvaluator';
 import { createInitialSmartFrameState, type SmartFrameGateState } from './gates/smartFrameTypes';
-import { CAPTURE_MODE, MAX_SESSION_CAPTURES } from './config';
+import { CAPTURE_MODE, CAPTURE_SEQUENCE, MAX_SESSION_CAPTURES } from './config';
 
 const root = document.getElementById('app')!;
 
@@ -119,15 +119,6 @@ function startViewfinder(): void {
   const torchSupported = isTorchSupported(track);
   refs.torchButton.classList.toggle('hidden', !torchSupported);
 
-  // Remove the .show class once the longer of the two child animations
-  // (the toast) finishes, rather than a setTimeout, so a rapid
-  // re-trigger (another capture landing before the first animation
-  // ends) can't race a timer that outlives the element's actual state.
-  const confirmToast = refs.captureConfirm.querySelector('.confirm-toast')!;
-  confirmToast.addEventListener('animationend', () => {
-    refs.captureConfirm.classList.remove('show');
-  });
-
   function updateSessionBadge(): void {
     // The Gallery button (top-bar) is always visible, saved captures
     // from earlier sessions should be reachable even before this
@@ -148,6 +139,10 @@ function startViewfinder(): void {
     refs.captureButton.textContent = '...';
     refs.switchCameraButton.disabled = true;
 
+    const totalMs = CAPTURE_SEQUENCE.sensorSettleMs + CAPTURE_SEQUENCE.burstDurationMs;
+    const stopTicking = startCapturingOverlay(refs, totalMs);
+    let succeeded = false;
+
     const aux: AuxCaptureData = {
       cardboardMode,
       card: cardboardMode ? latestCard : null,
@@ -156,7 +151,9 @@ function startViewfinder(): void {
 
     runCaptureSequence(refs.video, track, latestSnapshot, currentFacingMode, aux)
       .then((result) => {
-        flashCaptureConfirmation(refs);
+        stopTicking();
+        showCapturingSuccess(refs);
+        succeeded = true;
         const stored: StoredCapture = {
           id: makeCaptureId(),
           blob: result.blob,
@@ -190,11 +187,17 @@ function startViewfinder(): void {
         updateSessionBadge();
       })
       .finally(() => {
+        stopTicking();
         capturing = false;
         const full = sessionCaptureCount >= MAX_SESSION_CAPTURES;
         refs.captureButton.disabled = full;
         refs.captureButton.textContent = full ? 'Full' : 'Capture';
         refs.switchCameraButton.disabled = false;
+        // Leave the success checkmark up briefly so it's unmistakable;
+        // on a failure (rare, runCaptureSequence degrades most errors
+        // internally rather than rejecting) hide immediately instead of
+        // showing a fake success beat.
+        window.setTimeout(() => hideCapturingOverlay(refs), succeeded ? 900 : 0);
       });
   }
 
@@ -322,18 +325,68 @@ function startViewfinder(): void {
 }
 
 /**
- * Visual confirmation that a capture happened, for both manual and
- * auto capture (the two only entry points both funnel through
- * performCapture()). Sound/haptics alone (captureSequence.ts) are easy
- * to miss, especially for auto-capture where nothing else changes on
- * screen. Forces a reflow before re-adding .show so a capture landing
- * again before the previous animation finished restarts it instead of
- * being a no-op (the class would already be present).
+ * Guidance phrases shown across the capture window, keyed by elapsed
+ * fraction (0-1) of sensorSettleMs + burstDurationMs. Deliberately
+ * small movements ("slowly tilt", not "turn your head") since the
+ * still image is still picked from whichever burst frame scores best
+ * on sharpness/clipping -- a wide swing would just make more of the
+ * burst miss the pose gate the trigger already required. The point is
+ * catching a few different specular-highlight angles during the
+ * window ("manage reflections", per the product spec), not re-posing.
  */
-function flashCaptureConfirmation(refs: ViewfinderRefs): void {
-  refs.captureConfirm.classList.remove('show');
-  void refs.captureConfirm.offsetWidth;
-  refs.captureConfirm.classList.add('show');
+const CAPTURE_GUIDANCE_STEPS: { until: number; text: string }[] = [
+  { until: 0.12, text: 'Hold still, locking focus...' },
+  { until: 0.4, text: 'Keep smiling, slowly tilt left' },
+  { until: 0.62, text: 'Now center' },
+  { until: 0.88, text: 'Slowly tilt right' },
+  { until: 1.0, text: 'Hold center, almost done' },
+];
+
+/**
+ * Full-window capture feedback: a countdown, a progress bar, and
+ * rotating movement guidance, for both manual and auto capture (the
+ * two only entry points both funnel through performCapture()). Sound/
+ * haptics alone (captureSequence.ts) were easy to miss, and a brief
+ * end-of-capture flash wasn't visible/obvious enough either -- this
+ * covers the entire ~5.5s window instead of a moment at the end.
+ * Returns a stop function that halts the ticking (idempotent, safe to
+ * call more than once) without hiding the overlay, so the caller can
+ * show the success state first and hide the whole thing afterward.
+ */
+function startCapturingOverlay(refs: ViewfinderRefs, totalMs: number): () => void {
+  refs.capturingSuccessState.classList.add('hidden');
+  refs.capturingProgressState.classList.remove('hidden');
+  refs.capturingOverlay.classList.remove('hidden');
+  refs.promptBanner.classList.add('hidden-by-capture');
+  refs.liveReadout.classList.add('hidden-by-capture');
+
+  const startedAt = performance.now();
+  function tick(): void {
+    const elapsed = performance.now() - startedAt;
+    const fraction = Math.min(1, elapsed / totalMs);
+    const remainingS = Math.max(0, (totalMs - elapsed) / 1000);
+    refs.capturingTimer.textContent = `${remainingS.toFixed(1)}s`;
+    refs.capturingProgressFill.style.width = `${(fraction * 100).toFixed(1)}%`;
+    const step =
+      CAPTURE_GUIDANCE_STEPS.find((s) => fraction <= s.until) ??
+      CAPTURE_GUIDANCE_STEPS[CAPTURE_GUIDANCE_STEPS.length - 1];
+    refs.capturingGuidance.textContent = step.text;
+  }
+  tick();
+  const intervalId = window.setInterval(tick, 100);
+
+  return () => window.clearInterval(intervalId);
+}
+
+function showCapturingSuccess(refs: ViewfinderRefs): void {
+  refs.capturingProgressState.classList.add('hidden');
+  refs.capturingSuccessState.classList.remove('hidden');
+}
+
+function hideCapturingOverlay(refs: ViewfinderRefs): void {
+  refs.capturingOverlay.classList.add('hidden');
+  refs.promptBanner.classList.remove('hidden-by-capture');
+  refs.liveReadout.classList.remove('hidden-by-capture');
 }
 
 function scheduleNextFrame(video: HTMLVideoElement, cb: () => void): void {

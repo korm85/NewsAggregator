@@ -150,76 +150,114 @@ button.secondary {
 }
 
 /**
- * Visual confirmation that a capture happened, for both manual and
- * auto capture. Sound/haptics alone (captureSequence.ts) are easy to
- * miss, especially for auto-capture where nothing else changes on
- * screen. Class-toggle driven (.show), matching the .prompt-banner/
- * .live-readout state-class convention already used in this file.
+ * Full-window capture feedback covering the entire ~5.5s capture
+ * sequence (settle + burst), not just a moment at the end: a
+ * countdown, a progress bar, rotating movement guidance, then a clear
+ * success state. Sound/haptics alone (captureSequence.ts) were easy to
+ * miss, and a brief end-of-capture flash wasn't obvious enough either.
+ * Same class-toggle-driven state pattern as .prompt-banner/
+ * .live-readout elsewhere in this file.
  */
-.capture-confirm {
+.capturing-overlay {
   position: absolute;
   inset: 0;
-  z-index: 5;
-  pointer-events: none;
+  z-index: 6;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: rgba(15, 23, 42, 0.55);
 }
 
-.capture-confirm .confirm-flash {
-  position: absolute;
-  inset: 0;
-  background: #ffffff;
-  opacity: 0;
+.capturing-overlay.hidden {
+  display: none;
 }
 
-.capture-confirm .confirm-toast {
-  opacity: 0;
-  transform: scale(0.85);
-  background: rgba(15, 23, 42, 0.85);
-  border: 2px solid var(--green);
-  border-radius: 999px;
-  padding: 10px 20px;
+.capturing-progress-state,
+.capturing-success-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(85vw, 340px);
+  border-radius: 20px;
+  padding: 28px 32px;
+}
+
+.capturing-progress-state.hidden,
+.capturing-success-state.hidden {
+  display: none;
+}
+
+.capturing-progress-state {
+  background: rgba(15, 23, 42, 0.9);
+  border: 2px solid var(--accent);
+}
+
+.capturing-timer {
+  font-size: 2.2rem;
   font-weight: 700;
-  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.capturing-progress {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+.capturing-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.1s linear;
+}
+
+.capturing-guidance {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  min-height: 1.4em;
+}
+
+.capturing-success-state {
+  background: rgba(15, 61, 46, 0.92);
+  border: 2px solid var(--green);
+  animation: capture-success-pop 400ms ease-out;
+}
+
+.capturing-check {
+  font-size: 2.8rem;
+  line-height: 1;
   color: var(--green);
 }
 
-.capture-confirm.show .confirm-flash {
-  animation: capture-flash-pulse 450ms ease-out;
+.capturing-success-text {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--green);
 }
 
-.capture-confirm.show .confirm-toast {
-  animation: capture-toast-pop 700ms ease-out;
-}
-
-@keyframes capture-flash-pulse {
-  0% {
-    opacity: 0.85;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-@keyframes capture-toast-pop {
+@keyframes capture-success-pop {
   0% {
     opacity: 0;
     transform: scale(0.85);
   }
-  15% {
+  60% {
     opacity: 1;
     transform: scale(1.05);
   }
-  30% {
+  100% {
     transform: scale(1);
   }
-  75% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
+}
+
+.prompt-banner.hidden-by-capture,
+.live-readout.hidden-by-capture {
+  display: none;
 }
 
 .top-bar,
@@ -433,6 +471,12 @@ button.secondary {
   padding: 0;
   cursor: pointer;
   position: relative;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease;
+}
+
+.gallery-thumb:active {
+  transform: scale(0.96);
 }
 
 .gallery-thumb img {
@@ -442,28 +486,91 @@ button.secondary {
   display: block;
 }
 
-.gallery-thumb .thumb-angle {
+/** Non-technical only: a video icon when a clip was captured alongside the still, nothing raw/numeric in the grid. */
+.gallery-thumb .thumb-video-badge {
   position: absolute;
-  bottom: 4px;
-  left: 4px;
+  bottom: 6px;
+  right: 6px;
   background: rgba(15, 23, 42, 0.75);
   color: var(--text);
-  font-size: 0.7rem;
-  padding: 2px 6px;
-  border-radius: 999px;
+  font-size: 0.75rem;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .lightbox {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.9);
+  background: rgba(0, 0, 0, 0.92);
   z-index: 10;
+  overflow-y: auto;
+  padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+}
+
+.lightbox-content {
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  padding: 24px;
+  gap: 14px;
+}
+
+.lightbox-close-x {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 11;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(15, 23, 42, 0.75);
+  color: var(--text);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lightbox-date {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.capture-details {
+  width: min(90vw, 420px);
+}
+
+.capture-details summary {
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: center;
+  list-style: none;
+  padding: 6px 0;
+}
+
+.capture-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.capture-details summary::after {
+  content: '\25BE Capture details';
+}
+
+.capture-details[open] summary::after {
+  content: '\25B4 Hide details';
+}
+
+.capture-details .metadata {
+  margin-top: 8px;
 }
 
 .debug-readout {

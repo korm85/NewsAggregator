@@ -44,8 +44,8 @@ export async function renderGalleryScreen(root: HTMLElement, onBack: () => void)
     const thumb = document.createElement('button');
     thumb.className = 'gallery-thumb';
     thumb.innerHTML = `
-      <img src="${url}" alt="Captured smile, ${capture.offAxisDeg.toFixed(1)} degrees off axis" />
-      <span class="thumb-angle">${capture.offAxisDeg.toFixed(1)}&deg;</span>
+      <img src="${url}" alt="Captured smile" />
+      ${capture.videoBlob ? '<span class="thumb-video-badge" title="Video included">&#9654;</span>' : ''}
     `;
     thumb.onclick = () => openLightbox(root, capture, url, () => renderGalleryScreen(root, onBack));
     grid.appendChild(thumb);
@@ -74,35 +74,45 @@ function openLightbox(
       ).toFixed(1)}s, full frame</div>`
     : '';
 
+  const capturedAt = new Date(capture.capturedAt).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
   const overlay = document.createElement('div');
   overlay.className = 'lightbox';
   overlay.innerHTML = `
-    <div class="result-image-wrap">
-      <img src="${url}" alt="Captured smile" />
+    <button class="lightbox-close-x" id="lightbox-close" aria-label="Close">&times;</button>
+    <div class="lightbox-content">
+      <div class="result-image-wrap">
+        <img src="${url}" alt="Captured smile" />
+      </div>
+      ${videoSection}
+      <div class="lightbox-date">${capturedAt}</div>
+      <div class="actions-row">
+        <button class="secondary" id="lightbox-delete">Delete</button>
+        <a class="primary" id="lightbox-save" href="${url}" download="gavan-capture-${capture.id}.jpg" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center;">Save to device</a>
+      </div>
+      <details class="capture-details">
+        <summary></summary>
+        <div class="metadata">
+          <div><span>Pitch / Yaw</span><span>${capture.pitchDeg.toFixed(1)} / ${capture.yawDeg.toFixed(1)} deg</span></div>
+          <div><span>Roll</span><span>${capture.rollDeg.toFixed(1)} deg</span></div>
+          <div><span>Smile width</span><span>${capture.smileWidthRatio.toFixed(2)}</span></div>
+          <div><span>Mouth open (MAR)</span><span>${capture.mar.toFixed(3)}</span></div>
+          <div><span>Mouth box</span><span>${(capture.mouthBoxWidth * 100).toFixed(0)}% x ${(capture.mouthBoxHeight * 100).toFixed(0)}%</span></div>
+          <div><span>Exposure lock</span><span>${capture.exposureLockSuccess ? 'Locked' : 'Auto'}</span></div>
+          <div><span>Capture mode</span><span>${capture.captureMode}</span></div>
+          <div><span>Image source</span><span>${capture.stillSource === 'imageCapture' ? 'High-res photo' : 'Video frame'}</span></div>
+          ${
+            capture.cardboardMode
+              ? `<div><span>Card</span><span>${capture.cardAllMarkersVisible ? 'All markers' : `${capture.cardMarkersDetected.length} marker(s)`}, ${capture.cardIsFlat ? 'flat' : 'tilted'}</span></div>
+          <div><span>Light direction</span><span>${capture.lightDirection ? `x=${capture.lightDirection.x.toFixed(2)} y=${capture.lightDirection.y.toFixed(2)}` : 'unknown'}</span></div>`
+              : ''
+          }
+        </div>
+      </details>
     </div>
-    ${videoSection}
-    <div class="metadata">
-      <div><span>Pitch / Yaw</span><span>${capture.pitchDeg.toFixed(1)} / ${capture.yawDeg.toFixed(1)} deg</span></div>
-      <div><span>Roll</span><span>${capture.rollDeg.toFixed(1)} deg</span></div>
-      <div><span>Smile width</span><span>${capture.smileWidthRatio.toFixed(2)}</span></div>
-      <div><span>Mouth open (MAR)</span><span>${capture.mar.toFixed(3)}</span></div>
-      <div><span>Mouth box</span><span>${(capture.mouthBoxWidth * 100).toFixed(0)}% x ${(capture.mouthBoxHeight * 100).toFixed(0)}%</span></div>
-      <div><span>Exposure lock</span><span>${capture.exposureLockSuccess ? 'Locked' : 'Auto'}</span></div>
-      <div><span>Capture mode</span><span>${capture.captureMode}</span></div>
-      <div><span>Image source</span><span>${capture.stillSource === 'imageCapture' ? 'High-res photo' : 'Video frame'}</span></div>
-      ${
-        capture.cardboardMode
-          ? `<div><span>Card</span><span>${capture.cardAllMarkersVisible ? 'All markers' : `${capture.cardMarkersDetected.length} marker(s)`}, ${capture.cardIsFlat ? 'flat' : 'tilted'}</span></div>
-      <div><span>Light direction</span><span>${capture.lightDirection ? `x=${capture.lightDirection.x.toFixed(2)} y=${capture.lightDirection.y.toFixed(2)}` : 'unknown'}</span></div>`
-          : ''
-      }
-      <div><span>Captured</span><span>${new Date(capture.capturedAt).toLocaleTimeString()}</span></div>
-    </div>
-    <div class="actions-row">
-      <button class="secondary" id="lightbox-delete">Delete</button>
-      <a class="primary" id="lightbox-save" href="${url}" download="gavan-capture-${capture.id}.jpg" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center;">Save to device</a>
-    </div>
-    <button class="secondary" id="lightbox-close">Close</button>
   `;
   root.appendChild(overlay);
 

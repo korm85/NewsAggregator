@@ -8,11 +8,15 @@ banner telling the clinician what to fix, and a compact numeric readout
 instead of just the color. Capture is both automatic (fires once every
 gate has held passing for a few consecutive frames) and manual (a
 shutter button that works any time a face is detected, angle
-notwithstanding), with a screen flash + "Captured" badge confirming it
-happened either way. The still image comes straight off the raw camera
-track, never from encoded video, cropped to the mouth bounding box, with
-the pose/smile/card readout burned in; a supplementary full-frame video
-clip is recorded alongside every capture too (see "Video capture" below).
+notwithstanding). Capture itself is a ~5.5 second guided sequence, not a
+silent wait: a full-screen overlay shows a countdown, a progress bar, and
+rotating guidance ("slowly tilt left... now center... slowly tilt
+right") to vary the angle slightly during the window, ending in a clear
+"Captured" state (see "Capture feedback" below). The still image comes
+straight off the raw camera track, never from encoded video, cropped to
+the mouth bounding box, with the pose/smile/card readout burned in; a
+supplementary full-frame video clip is recorded alongside every capture
+too (see "Video capture" below).
 
 A **Cardboard** toggle (top-left) switches the guidance between two
 modes:
@@ -118,23 +122,64 @@ truth `X_SIGN` is supposed to track.
   the tracked mouth bounding box, keeps the sharpest with the least
   clipping (the "manage reflections" step), burns the pose/smile/card
   readout into it, and saves it with the full metadata set. A real video
-  clip records concurrently (see "Video capture" below), and a screen
-  flash + "Captured" badge confirms the shot the moment the burst
-  resolves, for both auto and manual capture, sound/haptics alone were
-  easy to miss.
+  clip records concurrently (see "Video capture" below). See "Capture
+  feedback" below for what's on screen during this window.
 - The viewfinder keeps going after each shot. Up to `MAX_SESSION_CAPTURES`
   (8, in `src/config.ts`) per sitting; the button reads "Full" once you
   hit that.
 - **Gallery** (top-right) is always visible, not gated behind capturing
-  something this session, tap it any time to open a grid of everything
-  saved this session and before. Tap a thumbnail for the full image, its
-  metadata (pitch/yaw/roll, smile width, MAR, exposure lock, image
-  source, and, when captured with the card, marker/flatness status and
-  light direction), the supplementary video (full-frame, with
-  size/duration), a **Save to device** download, or **Delete**.
+  something this session, tap it any time to open a polished grid of
+  everything saved this session and before (see "Gallery" below for the
+  redesign). Tap a thumbnail for the full image, the supplementary video
+  when one was recorded, save/delete actions, and a collapsed **Capture
+  details** section with the full metadata (pitch/yaw/roll, smile width,
+  MAR, exposure lock, image source, and, when captured with the card,
+  marker/flatness status and light direction) for anyone who wants it.
 - All storage is `src/storage/captureStore.ts`, a thin IndexedDB
   wrapper. No network calls, no server. **Clear all** in the gallery
   wipes it.
+
+## Capture feedback: a guided window, not a silent wait
+
+Sound/haptics alone (`fireHaptics`/`playCaptureSound` in
+`captureSequence.ts`) were easy to miss, especially for auto-capture
+where nothing else changes on screen, and a brief end-of-capture flash
+wasn't obvious enough either (`src/main.ts`, superseded now). The
+5.5-second capture window (`sensorSettleMs` + `burstDurationMs`) now
+shows a full-screen overlay the whole time: a countdown, a progress bar,
+and guidance text that rotates through a few small-movement prompts
+("hold still, locking focus" -> "slowly tilt left" -> "now center" ->
+"slowly tilt right" -> "hold center, almost done"), ending in an
+unmissable checkmark + "Captured" state held for ~900ms.
+
+The guidance is deliberately *small* movements, not a full head turn or
+walking the phone around: the still image is still picked from whichever
+burst frame scores best on sharpness/clipping, so swinging through a
+wide angle range would just make more of the burst land outside the pose
+gate the auto-trigger already required. The point is catching a few
+different specular-highlight angles during the window (the spec's
+"manage reflections"), not re-posing the shot. The timer/guidance loop in
+`src/main.ts` (`startCapturingOverlay`) runs independently of the actual
+capture internals (`captureSequence.ts`), driven off the same
+`CAPTURE_SEQUENCE` constants rather than a callback threaded through the
+burst loop, so it's an approximate on-screen cue, not frame-exact sync
+with what's actually being sampled at that instant.
+
+## Gallery: polished, metadata tucked away
+
+The lightbox used to put a full raw-metadata panel (pitch/yaw/roll, MAR,
+mouth box percentages, etc.) directly under the image, unavoidable and
+fairly technical-looking for a review screen. Redesigned
+(`src/ui/galleryScreen.ts`): the grid thumbnails no longer carry a raw
+angle badge (a small video icon is the only overlay, and only when a
+clip was recorded); the lightbox leads with the image/video, a clean
+date/time subtitle, and Save/Delete actions, then all 8+ metadata fields
+live inside a collapsed `<details>` "Capture details" disclosure, opt-in
+for anyone who wants the numbers rather than always in front. A close
+button in the corner replaces the old bottom "Close" button, and the
+lightbox itself scrolls (`overflow-y: auto`) instead of risking overflow
+on a small screen now that it can hold an image, a video, and a
+disclosure panel.
 
 The older 7-gate system (`src/gates/gateEvaluator.ts`,
 `src/capture/captureController.ts`, distance/centering/stability/exposure)
@@ -318,6 +363,19 @@ operating the phone.
   fallback, or how it behaves under real lighting/motion. The fallback
   path (used on every platform without it) is exercised by the existing
   smoke test; the enhancement path itself isn't.
+- **Capturing-overlay timing is an approximation, not frame-exact.** It
+  runs off a local timer matched to `CAPTURE_SEQUENCE`'s configured
+  durations, not a callback from the actual burst loop, so on a real
+  device where per-frame processing (MediaPipe, canvas encode) adds
+  overhead, the on-screen countdown could drift slightly from when the
+  capture sequence actually finishes. It's a UX cue, not a
+  synchronization guarantee.
+- **The gallery redesign and capturing overlay are unverified visually
+  on a real device.** Confirmed via the fake-camera smoke test that
+  nothing throws and the new elements render, but actual look/feel
+  (spacing, the `<details>` disclosure, the overlay's readability in
+  bright light) needs real-device eyes, same as every other UI change
+  in this project.
 - **Without-cardboard capture is now confirmed working on a real
   device** (live view, pose readout, smile detection all exercised
   against real photos), which is how the smile-metric and direction-
