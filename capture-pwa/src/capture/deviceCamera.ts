@@ -1,13 +1,16 @@
-import { CAPTURE_MODE } from '../config';
-
 export class CameraPermissionError extends Error {
   constructor(public readonly cause: unknown) {
     super('Camera permission denied or unavailable');
   }
 }
 
-export async function startCamera(): Promise<MediaStream> {
-  const facingMode = CAPTURE_MODE === 'front' ? 'user' : 'environment';
+/**
+ * Takes the desired facing mode explicitly rather than reading a static
+ * config constant, so the caller (main.ts) can switch cameras at
+ * runtime instead of it being fixed for the life of the app.
+ */
+export async function startCamera(captureMode: 'front' | 'rear'): Promise<MediaStream> {
+  const facingMode = captureMode === 'front' ? 'user' : 'environment';
   try {
     return await navigator.mediaDevices.getUserMedia({
       audio: false,
@@ -24,6 +27,36 @@ export async function startCamera(): Promise<MediaStream> {
 
 export function stopCamera(stream: MediaStream): void {
   for (const track of stream.getTracks()) track.stop();
+}
+
+/**
+ * `torch` (flash-as-flashlight) is a real, shipping constraint on
+ * Chrome/Android but not part of TypeScript's lib.dom.d.ts. Front
+ * cameras essentially never have a flash, so this is expected to only
+ * report supported on the rear camera in practice; callers should hide
+ * the flash control rather than show a permanently broken button.
+ */
+interface TorchCapabilities extends MediaTrackCapabilities {
+  torch?: boolean;
+}
+
+interface TorchConstraints extends MediaTrackConstraintSet {
+  torch?: boolean;
+}
+
+export function isTorchSupported(track: MediaStreamTrack): boolean {
+  const capabilities = track.getCapabilities?.() as TorchCapabilities | undefined;
+  return capabilities?.torch === true;
+}
+
+export async function setTorch(track: MediaStreamTrack, on: boolean): Promise<boolean> {
+  if (!isTorchSupported(track)) return false;
+  try {
+    await track.applyConstraints({ advanced: [{ torch: on } as TorchConstraints] });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -60,6 +60,14 @@ stays low). If a sign is backwards, flip `X_SIGN` / `Y_SIGN` in
 
 ## The capture loop
 
+- **Switch** (top-left) swaps front/rear camera at any time, no reload.
+  Requeries `getUserMedia` with the other `facingMode`, stops the old
+  track, and starts a fresh viewfinder session (session capture count
+  and badge reset; anything already saved stays in the gallery).
+- **Flash** (top-left, next to Switch) toggles torch mode via
+  `track.applyConstraints({advanced:[{torch}]})`. Only shown when the
+  active camera actually reports torch support, front cameras almost
+  never do, so expect it to only appear on rear.
 - Watch the numbers. `offAxisDeg` turns the readout (and the lip dots)
   green with an "OPTIMAL" tag once you're within 15 degrees, using the
   same 15/18 hysteresis band as before so it doesn't flicker at the

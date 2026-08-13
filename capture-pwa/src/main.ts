@@ -7,15 +7,25 @@ import { drawLipDots } from './ui/overlay';
 import { MediaPipeTracker } from './tracker/mediapipeTracker';
 import type { TrackerResult } from './tracker/types';
 import { runCaptureSequence, type TrackerSnapshot } from './capture/captureSequence';
-import { startCamera, CameraPermissionError } from './capture/deviceCamera';
+import {
+  CameraPermissionError,
+  isTorchSupported,
+  setTorch,
+  startCamera,
+  stopCamera,
+} from './capture/deviceCamera';
 import { saveCapture, type StoredCapture } from './storage/captureStore';
-import { MAX_SESSION_CAPTURES, THRESHOLDS } from './config';
+import { CAPTURE_MODE, MAX_SESSION_CAPTURES, THRESHOLDS } from './config';
 
 const root = document.getElementById('app')!;
 
 let stream: MediaStream | null = null;
 let tracker: MediaPipeTracker | null = null;
 let loopActive = false;
+/** Which camera is active right now. Starts from config's default, but
+ * can change at runtime via the Switch button (unlike v1/v2, this is no
+ * longer fixed for the life of the app). */
+let currentFacingMode: 'front' | 'rear' = CAPTURE_MODE;
 
 async function main(): Promise<void> {
   renderPermissionScreen(root, onEnableCamera);
@@ -24,7 +34,7 @@ async function main(): Promise<void> {
 async function onEnableCamera(): Promise<void> {
   renderLoadingScreen(root, 'Starting camera...');
   try {
-    stream = await startCamera();
+    stream = await startCamera(currentFacingMode);
   } catch (err) {
     if (err instanceof CameraPermissionError) {
       renderDeniedScreen(root, onEnableCamera);
@@ -59,6 +69,8 @@ function startViewfinder(): void {
   loopActive = true;
   let sessionCaptureCount = 0;
   let capturing = false;
+  let switchingCamera = false;
+  let torchOn = false;
   let angleOptimal = false;
   let latestSnapshot: TrackerSnapshot | null = null;
 
@@ -67,7 +79,12 @@ function startViewfinder(): void {
     void renderGalleryScreen(root, startViewfinder);
   };
 
-  const refs = renderViewfinderScreen(root, goToGallery, onCaptureTapped);
+  const refs = renderViewfinderScreen(root, currentFacingMode === 'front', {
+    onDone: goToGallery,
+    onCapture: onCaptureTapped,
+    onSwitchCamera: onSwitchCameraTapped,
+    onToggleTorch: onToggleTorchTapped,
+  });
   refs.video.srcObject = stream;
   refs.video.play().catch(() => {
     // Autoplay can be blocked in rare cases; the user still sees the
@@ -76,6 +93,9 @@ function startViewfinder(): void {
 
   const overlayCtx = refs.overlayCanvas.getContext('2d')!;
   const track = stream.getVideoTracks()[0];
+
+  const torchSupported = isTorchSupported(track);
+  refs.torchButton.classList.toggle('hidden', !torchSupported);
 
   function updateSessionBadge(): void {
     if (sessionCaptureCount === 0) {
@@ -89,12 +109,13 @@ function startViewfinder(): void {
   }
 
   function onCaptureTapped(): void {
-    if (capturing || !latestSnapshot || sessionCaptureCount >= MAX_SESSION_CAPTURES) return;
+    if (capturing || switchingCamera || !latestSnapshot || sessionCaptureCount >= MAX_SESSION_CAPTURES) return;
     capturing = true;
     refs.captureButton.disabled = true;
     refs.captureButton.textContent = '...';
+    refs.switchCameraButton.disabled = true;
 
-    runCaptureSequence(refs.video, track, latestSnapshot)
+    runCaptureSequence(refs.video, track, latestSnapshot, currentFacingMode)
       .then((result) => {
         const stored: StoredCapture = {
           id: makeCaptureId(),
@@ -120,7 +141,42 @@ function startViewfinder(): void {
         const full = sessionCaptureCount >= MAX_SESSION_CAPTURES;
         refs.captureButton.disabled = full;
         refs.captureButton.textContent = full ? 'Full' : 'Capture';
+        refs.switchCameraButton.disabled = false;
       });
+  }
+
+  async function onSwitchCameraTapped(): Promise<void> {
+    if (!stream || switchingCamera || capturing) return;
+    switchingCamera = true;
+    refs.switchCameraButton.disabled = true;
+    refs.captureButton.disabled = true;
+
+    const oldStream = stream;
+    const nextMode = currentFacingMode === 'front' ? 'rear' : 'front';
+    try {
+      const newStream = await startCamera(nextMode);
+      stopCamera(oldStream);
+      stream = newStream;
+      currentFacingMode = nextMode;
+      loopActive = false;
+      startViewfinder();
+    } catch {
+      // Camera switch failed (device may not have a second camera).
+      // Stay on the current one rather than leaving a dead viewfinder.
+      switchingCamera = false;
+      refs.switchCameraButton.disabled = false;
+      refs.captureButton.disabled = !latestSnapshot;
+    }
+  }
+
+  async function onToggleTorchTapped(): Promise<void> {
+    if (!torchSupported) return;
+    const nextOn = !torchOn;
+    const ok = await setTorch(track, nextOn);
+    if (ok) {
+      torchOn = nextOn;
+      refs.torchButton.classList.toggle('active', torchOn);
+    }
   }
 
   function resizeCanvas(): void {
@@ -163,9 +219,9 @@ function startViewfinder(): void {
 
     updateReadout(refs, trackerResult, angleOptimal);
 
-    // Don't fight the "capturing"/"full" disabled states the click
-    // handler sets while a capture is in flight or the session is capped.
-    if (!capturing && sessionCaptureCount < MAX_SESSION_CAPTURES) {
+    // Don't fight the "capturing"/"switching"/"full" disabled states the
+    // click handlers set while something's already in flight.
+    if (!capturing && !switchingCamera && sessionCaptureCount < MAX_SESSION_CAPTURES) {
       refs.captureButton.disabled = !trackerResult.detected;
     }
 

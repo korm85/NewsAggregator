@@ -1,4 +1,4 @@
-import { CAPTURE_SEQUENCE } from '../config';
+import { CAPTURE_MODE, CAPTURE_SEQUENCE } from '../config';
 import type { GateEvaluation } from '../gates/types';
 import { runCaptureSequence, type CaptureResult, type TrackerSnapshot } from './captureSequence';
 
@@ -52,7 +52,10 @@ export class CaptureController {
     if (this.ringProgress >= 1) {
       this.phase = 'processing';
       const snapshotForCapture = this.lastSnapshot;
-      runCaptureSequence(video, track, snapshotForCapture).then((result) => {
+      // Not wired into main.ts (see README "The capture loop"), so
+      // there's no live currentFacingMode to thread through here;
+      // falls back to config's default.
+      runCaptureSequence(video, track, snapshotForCapture, CAPTURE_MODE).then((result) => {
         this.phase = 'idle';
         this.ringProgress = 0;
         this.onComplete(result);

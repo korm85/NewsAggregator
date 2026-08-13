@@ -149,16 +149,25 @@ button.secondary {
   cursor: default;
 }
 
-.top-bar {
+.top-bar,
+.top-bar-left {
   position: absolute;
   top: max(12px, env(safe-area-inset-top));
-  right: max(12px, env(safe-area-inset-right));
   z-index: 4;
   display: flex;
   gap: 8px;
 }
 
-.top-bar button {
+.top-bar {
+  right: max(12px, env(safe-area-inset-right));
+}
+
+.top-bar-left {
+  left: max(12px, env(safe-area-inset-left));
+}
+
+.top-bar button,
+.top-bar-left button {
   background: rgba(15, 23, 42, 0.6);
   color: var(--text);
   border: none;
@@ -167,17 +176,25 @@ button.secondary {
   font-size: 0.85rem;
 }
 
-.top-bar button.hidden {
+.top-bar button.hidden,
+.top-bar-left button.hidden {
   display: none;
 }
 
-.prompt-banner.optimal {
-  color: var(--green);
+.top-bar-left button.active {
+  background: var(--accent);
+  color: #06231f;
+  font-weight: 600;
+}
+
+.top-bar-left button:disabled,
+.top-bar button:disabled {
+  opacity: 0.5;
 }
 
 .session-badge {
   position: absolute;
-  top: max(12px, env(safe-area-inset-top));
+  top: max(56px, calc(env(safe-area-inset-top) + 48px));
   left: max(12px, env(safe-area-inset-left));
   z-index: 4;
   background: rgba(15, 23, 42, 0.6);

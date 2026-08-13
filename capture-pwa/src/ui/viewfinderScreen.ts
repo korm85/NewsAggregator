@@ -1,5 +1,3 @@
-import { MIRRORED } from '../config';
-
 export interface ViewfinderRefs {
   video: HTMLVideoElement;
   overlayCanvas: HTMLCanvasElement;
@@ -7,18 +5,36 @@ export interface ViewfinderRefs {
   sessionBadge: HTMLDivElement;
   doneButton: HTMLButtonElement;
   captureButton: HTMLButtonElement;
+  switchCameraButton: HTMLButtonElement;
+  torchButton: HTMLButtonElement;
 }
 
+export interface ViewfinderCallbacks {
+  onDone: () => void;
+  onCapture: () => void;
+  onSwitchCamera: () => void;
+  onToggleTorch: () => void;
+}
+
+/**
+ * `mirrored` is passed in rather than read from a static config
+ * constant, since the camera (and therefore whether the preview should
+ * be mirrored) can now change at runtime via the switch-camera button.
+ */
 export function renderViewfinderScreen(
   root: HTMLElement,
-  onDone: () => void,
-  onCapture: () => void,
+  mirrored: boolean,
+  callbacks: ViewfinderCallbacks,
 ): ViewfinderRefs {
   root.innerHTML = `
-    <div class="viewfinder ${MIRRORED ? 'mirrored' : ''}">
+    <div class="viewfinder ${mirrored ? 'mirrored' : ''}">
       <video id="capture-video" autoplay playsinline muted></video>
       <canvas class="overlay" id="capture-overlay"></canvas>
       <div class="session-badge hidden" id="session-badge"></div>
+      <div class="top-bar-left">
+        <button id="switch-camera-btn" title="Switch camera">Switch</button>
+        <button id="torch-btn" class="hidden" title="Toggle flash">Flash</button>
+      </div>
       <div class="top-bar">
         <button id="done-btn" class="hidden">Done</button>
         <button id="debug-link">Debug</button>
@@ -32,9 +48,13 @@ export function renderViewfinderScreen(
     window.location.href = `${import.meta.env.BASE_URL}debug.html`;
   };
   const doneButton = root.querySelector<HTMLButtonElement>('#done-btn')!;
-  doneButton.onclick = onDone;
+  doneButton.onclick = callbacks.onDone;
   const captureButton = root.querySelector<HTMLButtonElement>('#capture-btn')!;
-  captureButton.onclick = onCapture;
+  captureButton.onclick = callbacks.onCapture;
+  const switchCameraButton = root.querySelector<HTMLButtonElement>('#switch-camera-btn')!;
+  switchCameraButton.onclick = callbacks.onSwitchCamera;
+  const torchButton = root.querySelector<HTMLButtonElement>('#torch-btn')!;
+  torchButton.onclick = callbacks.onToggleTorch;
 
   return {
     video: root.querySelector<HTMLVideoElement>('#capture-video')!,
@@ -43,5 +63,7 @@ export function renderViewfinderScreen(
     sessionBadge: root.querySelector<HTMLDivElement>('#session-badge')!,
     doneButton,
     captureButton,
+    switchCameraButton,
+    torchButton,
   };
 }

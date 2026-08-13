@@ -95,6 +95,17 @@ try {
     captureBtnEnabled,
   );
 
+  // Fake camera devices don't report torch capability, so the flash
+  // button should stay hidden; the switch-camera button should always
+  // be visible and clicking it should not crash the app.
+  const torchHidden = await page.$eval('#torch-btn', (el) => el.classList.contains('hidden'));
+  console.log('[smoke] torch button hidden (expected true with fake camera):', torchHidden);
+
+  await page.click('#switch-camera-btn');
+  await page.waitForTimeout(1500);
+  const stillHasVideo = await page.$eval('#capture-video', (el) => el.readyState >= 2);
+  console.log('[smoke] after camera switch, video still playing:', stillHasVideo);
+
   await page.goto(`${BASE}debug.html`);
   await page.waitForSelector('#readout', { timeout: 10000 });
   await page.waitForTimeout(2000);

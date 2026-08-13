@@ -1,4 +1,4 @@
-import { CAPTURE_MODE, CAPTURE_SEQUENCE } from '../config';
+import { CAPTURE_SEQUENCE } from '../config';
 import { releaseLock, tryLockCapture } from './deviceCamera';
 import { captureAndScoreFrame, type CropRect } from './frameScore';
 
@@ -111,6 +111,7 @@ export async function runCaptureSequence(
   video: HTMLVideoElement,
   track: MediaStreamTrack,
   snapshot: TrackerSnapshot,
+  captureMode: 'front' | 'rear',
 ): Promise<CaptureResult> {
   const capturedAt = new Date().toISOString();
   const overlayLines = buildOverlayLines(snapshot, capturedAt);
@@ -148,7 +149,7 @@ export async function runCaptureSequence(
       exposureLockSuccess,
       deviceModel: navigator.userAgent,
       capturedAt,
-      captureMode: CAPTURE_MODE,
+      captureMode,
       framesCaptured: CAPTURE_SEQUENCE.burstFrameCount,
       framesKept: kept.length,
     },
