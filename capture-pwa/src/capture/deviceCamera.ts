@@ -18,6 +18,7 @@ export async function startCamera(captureMode: 'front' | 'rear'): Promise<MediaS
         facingMode,
         width: { ideal: 3840 },
         height: { ideal: 2160 },
+        frameRate: { ideal: 30 },
       },
     });
     await maximizeResolution(stream.getVideoTracks()[0]);
@@ -37,6 +38,20 @@ export async function startCamera(captureMode: 'front' | 'rear'): Promise<MediaS
  * own ceiling rather than a guessed common denominator. Best-effort:
  * failures here just leave the stream at whatever getUserMedia already
  * negotiated, never break camera startup.
+ *
+ * Requests `frameRate: { ideal: 30 }` alongside the resolution, not
+ * just resolution alone: confirmed on-device that the recorded
+ * supplementary video (videoRecorder.ts records the same live track
+ * directly, full-frame, no redraw) came out visibly low-frame-rate
+ * after this function started requesting the sensor's literal maximum
+ * resolution. Many phone cameras only support their true max
+ * resolution (often a photo-capture mode, not a video mode) at a much
+ * lower hardware frame rate, commonly 10-15fps instead of 30+. `ideal`
+ * constraints are weighted preferences the UA balances against each
+ * other, not hard requirements, so asking for both lets the browser
+ * trade down resolution slightly if that's what it actually takes to
+ * hit a usable frame rate, instead of this function blindly maximizing
+ * resolution regardless of the frame-rate cost.
  */
 export function pickMaxResolutionConstraints(
   capabilities: MediaTrackCapabilities,
@@ -44,7 +59,7 @@ export function pickMaxResolutionConstraints(
   const width = capabilities.width?.max;
   const height = capabilities.height?.max;
   if (!width || !height) return null;
-  return { width: { ideal: width }, height: { ideal: height } };
+  return { width: { ideal: width }, height: { ideal: height }, frameRate: { ideal: 30 } };
 }
 
 async function maximizeResolution(track: MediaStreamTrack): Promise<void> {

@@ -278,7 +278,15 @@ Two-layer approach instead:
   instead of relying solely on the static `ideal: 3840/2160` hint some
   browsers under-honor. Uses `ideal`, never `exact`, so it can't fail
   outright on a device that can't hit its own reported max. No platform
-  gap, no timing risk.
+  gap, no timing risk. Requests `frameRate: { ideal: 30 }` in the same
+  call (and in the initial `getUserMedia` constraints): confirmed
+  on-device that maximizing resolution alone visibly tanked the
+  recorded video's frame rate, because a phone camera's literal max
+  resolution is often a photo-capture mode the hardware only supports
+  at 10-15fps, not a video mode. `ideal` constraints are weighted
+  preferences the browser balances against each other, so asking for
+  both lets it trade down resolution slightly if that's what a usable
+  frame rate actually costs, instead of chasing resolution regardless.
 - **Progressive enhancement, Android/Chrome only**
   (`src/capture/imageCapture.ts`, `takeHighResPhoto`): after the
   existing burst-and-score loop has already picked its best moment
@@ -356,7 +364,11 @@ operating the phone.
   correctness, whether running the recorder concurrently with the
   canvas burst loop causes frame drops on lower-end phones, and iOS
   Safari's `MediaRecorder` support specifics in practice are all
-  real-device-only questions.
+  real-device-only questions. One real issue already found and fixed
+  this way: maximizing resolution (see "Camera quality" above) without
+  also asking for a frame rate visibly tanked the recorded video's fps,
+  since the same live track is what gets recorded. Not re-verified on a
+  real device since the fix, same caveat as everything else here.
 - **`ImageCapture` quality gain is unverified.** No real Android device
   was available to confirm `takeHighResPhoto()` actually produces a
   meaningfully higher-resolution/quality result than the canvas
