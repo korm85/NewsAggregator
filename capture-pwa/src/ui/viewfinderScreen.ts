@@ -19,7 +19,7 @@ export function renderViewfinderScreen(root: HTMLElement): ViewfinderRefs {
   `;
 
   root.querySelector<HTMLButtonElement>('#debug-link')!.onclick = () => {
-    window.location.href = '/debug.html';
+    window.location.href = `${import.meta.env.BASE_URL}debug.html`;
   };
 
   return {

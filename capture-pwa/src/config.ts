@@ -101,5 +101,13 @@ export const CAPTURE_SEQUENCE = {
   keepBestCount: 3,
 } as const;
 
-export const MODEL_URL = '/models/face_landmarker.task';
-export const WASM_BASE_URL = '/wasm';
+/**
+ * import.meta.env.BASE_URL reflects Vite's configured `base` (see
+ * vite.config.ts): '/' in local dev, '/NewsAggregator/' when built for
+ * GitHub Pages. Unlike asset references inside index.html/debug.html,
+ * Vite does not rewrite plain string literals, so runtime path
+ * constants must read this explicitly.
+ */
+const BASE = import.meta.env.BASE_URL;
+export const MODEL_URL = `${BASE}models/face_landmarker.task`;
+export const WASM_BASE_URL = `${BASE}wasm`;

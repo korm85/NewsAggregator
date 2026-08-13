@@ -2,7 +2,8 @@ import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 
 const PORT = 4173;
-const BASE = `http://localhost:${PORT}`;
+// vite.config.ts sets base: '/NewsAggregator/' for the GitHub Pages deploy.
+const BASE = `http://localhost:${PORT}/NewsAggregator/`;
 
 function waitForServer(url, timeoutMs) {
   const start = Date.now();

@@ -1,7 +1,16 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// Deployed as a GitHub Pages project site: the workflow uploads
+// capture-pwa/dist as the Pages artifact root, so the site lives at
+// https://<user>.github.io/NewsAggregator/, not the domain root. Runtime
+// code that references paths (src/config.ts, viewfinderScreen.ts) reads
+// import.meta.env.BASE_URL rather than hardcoding '/', since only
+// index.html/debug.html asset references are auto-rewritten by Vite.
+const BASE = '/NewsAggregator/';
+
 export default defineConfig({
+  base: BASE,
   server: {
     host: true,
     // getUserMedia requires a secure context; vite's dev server over plain
@@ -29,11 +38,11 @@ export default defineConfig({
         background_color: '#0f172a',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/',
+        start_url: BASE,
         icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {

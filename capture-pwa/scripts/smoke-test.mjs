@@ -2,7 +2,8 @@ import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 
 const PORT = 4173;
-const BASE = `http://localhost:${PORT}`;
+// vite.config.ts sets base: '/NewsAggregator/' for the GitHub Pages deploy.
+const BASE = `http://localhost:${PORT}/NewsAggregator/`;
 
 function waitForServer(url, timeoutMs) {
   const start = Date.now();
@@ -52,7 +53,12 @@ try {
   });
   page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
   page.on('response', (res) => {
-    if (res.status() === 404) consoleErrors.push(`404: ${res.url()}`);
+    // The browser's automatic favicon probe hits the domain root
+    // (/favicon.ico), outside the /NewsAggregator/ base path the site
+    // is actually served under. Expected and harmless.
+    if (res.status() === 404 && !res.url().endsWith('/favicon.ico')) {
+      consoleErrors.push(`404: ${res.url()}`);
+    }
   });
   page.on('requestfailed', (req) => {
     consoleErrors.push(`requestfailed: ${req.url()} (${req.failure()?.errorText})`);
@@ -81,7 +87,7 @@ try {
   const overlaySize = await page.$eval('#capture-overlay', (el) => ({ w: el.width, h: el.height }));
   console.log('[smoke] after 3s of frames: bannerHidden=', bannerHidden, 'overlaySize=', overlaySize);
 
-  await page.goto(`${BASE}/debug.html`);
+  await page.goto(`${BASE}debug.html`);
   await page.waitForSelector('#readout', { timeout: 10000 });
   await page.waitForTimeout(2000);
   const readoutText = await page.$eval('#readout', (el) => el.textContent);
