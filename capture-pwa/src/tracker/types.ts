@@ -21,6 +21,13 @@ export interface TrackerResult {
    * delta is interpreted.
    */
   landmarkChecksum: number;
+  /**
+   * Normalized 0-1 outer-lip contour points, for drawing guide dots on
+   * the live view (same idea as /debug.html). Generic {x,y} pairs, not
+   * a MediaPipe type, so this stays engine-agnostic. Null when no face
+   * detected.
+   */
+  lipPoints: { x: number; y: number }[] | null;
 }
 
 export interface Tracker {

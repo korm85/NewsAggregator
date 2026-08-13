@@ -97,6 +97,28 @@ function drawArrow(
   ctx.restore();
 }
 
+/**
+ * Debug-style dot markers on the outer lip contour, matching what
+ * /debug.html draws. Dots carry no directional meaning, so unlike the
+ * arrow, no mirror-compensation is needed here: the overlay canvas gets
+ * the same CSS mirror as the video, so raw-space points line up as-is.
+ */
+export function drawLipDots(
+  ctx: CanvasRenderingContext2D,
+  canvasW: number,
+  canvasH: number,
+  points: { x: number; y: number }[] | null,
+  color: string,
+): void {
+  if (!points) return;
+  ctx.fillStyle = color;
+  for (const p of points) {
+    ctx.beginPath();
+    ctx.arc(p.x * canvasW, p.y * canvasH, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawRing(ctx: CanvasRenderingContext2D, cx: number, cy: number, progress: number): void {
   const r = 14;
   ctx.beginPath();

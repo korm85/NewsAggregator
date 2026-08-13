@@ -25,6 +25,7 @@ const EMPTY_RESULT: TrackerResult = {
   offAxisVec: { x: 0, y: 0 },
   rollDeg: 0,
   landmarkChecksum: 0,
+  lipPoints: null,
 };
 
 /**
@@ -78,7 +79,7 @@ export class MediaPipeTracker implements Tracker {
     }
 
     const { offAxisDeg, offAxisVec, rollDeg } = computeAngles(matrixData);
-    const { box, checksum } = computeMouthBox(
+    const { box, checksum, points } = computeMouthBox(
       landmarks,
       video.videoWidth,
       video.videoHeight,
@@ -93,6 +94,7 @@ export class MediaPipeTracker implements Tracker {
       offAxisVec,
       rollDeg,
       landmarkChecksum: checksum,
+      lipPoints: points,
     };
   }
 
@@ -131,6 +133,7 @@ function computeMouthBox(
   let maxX = -Infinity;
   let maxY = -Infinity;
   let checksum = 0;
+  const points: { x: number; y: number }[] = [];
 
   for (const idx of OUTER_LIP_INDICES) {
     const lm = landmarks[idx];
@@ -140,6 +143,7 @@ function computeMouthBox(
     if (lm.x > maxX) maxX = lm.x;
     if (lm.y > maxY) maxY = lm.y;
     checksum += lm.x * videoWidth + lm.y * videoHeight;
+    points.push({ x: lm.x, y: lm.y });
   }
 
   const rawW = maxX - minX;
@@ -153,7 +157,7 @@ function computeMouthBox(
     h: rawH * (1 + 2 * pad),
   };
 
-  return { box, checksum };
+  return { box, checksum, points };
 }
 
 function smoothBox(

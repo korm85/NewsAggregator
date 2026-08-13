@@ -80,18 +80,26 @@ try {
   await page.waitForSelector('#capture-video', { timeout: 30000 });
   console.log('[smoke] viewfinder rendered, camera stream attached');
 
-  // Let a few frames run through tracker + gate evaluator + overlay draw.
+  // Let a few frames run through the tracker + live readout update.
   await page.waitForTimeout(3000);
 
-  const bannerHidden = await page.$eval('#prompt-banner', (el) => el.classList.contains('hidden'));
+  const readoutText = await page.$eval('#live-readout', (el) => el.textContent);
   const overlaySize = await page.$eval('#capture-overlay', (el) => ({ w: el.width, h: el.height }));
-  console.log('[smoke] after 3s of frames: bannerHidden=', bannerHidden, 'overlaySize=', overlaySize);
+  const captureBtnEnabled = await page.$eval('#capture-btn', (el) => !el.disabled);
+  console.log(
+    '[smoke] after 3s of frames: readout=',
+    readoutText,
+    'overlaySize=',
+    overlaySize,
+    'captureBtnEnabled=',
+    captureBtnEnabled,
+  );
 
   await page.goto(`${BASE}debug.html`);
   await page.waitForSelector('#readout', { timeout: 10000 });
   await page.waitForTimeout(2000);
-  const readoutText = await page.$eval('#readout', (el) => el.textContent);
-  console.log('[smoke] debug page readout:', readoutText);
+  const debugReadoutText = await page.$eval('#readout', (el) => el.textContent);
+  console.log('[smoke] debug page readout:', debugReadoutText);
 
   await browser.close();
 

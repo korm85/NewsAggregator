@@ -11,6 +11,7 @@ function makeTracker(overrides: Partial<TrackerResult> = {}): TrackerResult {
     offAxisVec: { x: 0, y: 0 },
     rollDeg: 0,
     landmarkChecksum: 1000,
+    lipPoints: null,
     ...overrides,
   };
 }
