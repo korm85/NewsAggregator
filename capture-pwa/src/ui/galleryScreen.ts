@@ -67,7 +67,8 @@ function openLightbox(
     <div class="metadata">
       <div><span>Pitch / Yaw</span><span>${capture.pitchDeg.toFixed(1)} / ${capture.yawDeg.toFixed(1)} deg</span></div>
       <div><span>Roll</span><span>${capture.rollDeg.toFixed(1)} deg</span></div>
-      <div><span>Smile (MAR)</span><span>${capture.mar.toFixed(3)}</span></div>
+      <div><span>Smile width</span><span>${capture.smileWidthRatio.toFixed(2)}</span></div>
+      <div><span>Mouth open (MAR)</span><span>${capture.mar.toFixed(3)}</span></div>
       <div><span>Mouth box</span><span>${(capture.mouthBoxWidth * 100).toFixed(0)}% x ${(capture.mouthBoxHeight * 100).toFixed(0)}%</span></div>
       <div><span>Exposure lock</span><span>${capture.exposureLockSuccess ? 'Locked' : 'Auto'}</span></div>
       <div><span>Capture mode</span><span>${capture.captureMode}</span></div>

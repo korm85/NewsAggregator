@@ -1,5 +1,6 @@
 import { CAPTURE_SEQUENCE } from '../config';
 import type { CardDetectionResult } from './cardDetector';
+import { computeCardGuideRect, unionRect } from './cardGuideRegion';
 import { releaseLock, tryLockCapture } from './deviceCamera';
 import { captureAndScoreFrame, type CropRect } from './frameScore';
 import type { LightEstimate } from './lightEstimator';
@@ -11,6 +12,7 @@ export interface CaptureMetadata {
   pitchDeg: number;
   yawDeg: number;
   mar: number;
+  smileWidthRatio: number;
   mouthBoxWidth: number;
   mouthBoxHeight: number;
   exposureLockSuccess: boolean;
@@ -38,6 +40,7 @@ export interface TrackerSnapshot {
   pitchDeg: number;
   yawDeg: number;
   mar: number;
+  smileWidthRatio: number;
   mouthBox: { x: number; y: number; w: number; h: number } | null;
 }
 
@@ -95,6 +98,7 @@ function buildOverlayLines(
   const lines = [
     `pitchDeg: ${snapshot.pitchDeg.toFixed(2)}  yawDeg: ${snapshot.yawDeg.toFixed(2)}`,
     `rollDeg: ${snapshot.rollDeg.toFixed(2)}  mar: ${snapshot.mar.toFixed(3)}`,
+    `smileWidthRatio: ${snapshot.smileWidthRatio.toFixed(2)}`,
   ];
   if (aux.cardboardMode) {
     const cardText = aux.card
@@ -109,24 +113,32 @@ function buildOverlayLines(
 /**
  * The saved image is cropped to the mouth bounding box (the same box
  * the tracker computes, padded 15%), not the full camera frame, per
- * "I don't need all the face." Clamped to the video's actual pixel
- * bounds since the normalized box can extend slightly past the frame
- * edge. Falls back to the full frame if no box was available at
- * capture time (shouldn't happen, the shutter button is disabled
- * without a detected face, but a snapshot with a null box must not
- * crash the capture).
+ * "I don't need all the face." When cardboardMode is on, the crop
+ * expands to also include the on-screen card guide region (see
+ * cardGuideRegion.ts): without this, a "with cardboard" capture would
+ * still save a mouth-only crop that excludes the card entirely, even
+ * though the whole point of that mode is a photo with the card in it
+ * for color calibration, not just card detection numbers in the
+ * metadata. Clamped to the video's actual pixel bounds since the
+ * normalized region can extend slightly past the frame edge. Falls
+ * back to the full frame if no box was available at capture time
+ * (shouldn't happen, the shutter button is disabled without a detected
+ * face, but a snapshot with a null box must not crash the capture).
  */
 function computeCropRect(
   mouthBox: TrackerSnapshot['mouthBox'],
   videoWidth: number,
   videoHeight: number,
+  includeCardGuide: boolean,
 ): CropRect {
   if (!mouthBox) return { x: 0, y: 0, w: videoWidth, h: videoHeight };
 
-  const rawX = mouthBox.x * videoWidth;
-  const rawY = mouthBox.y * videoHeight;
-  const rawW = mouthBox.w * videoWidth;
-  const rawH = mouthBox.h * videoHeight;
+  const region = includeCardGuide ? unionRect(mouthBox, computeCardGuideRect(mouthBox)) : mouthBox;
+
+  const rawX = region.x * videoWidth;
+  const rawY = region.y * videoHeight;
+  const rawW = region.w * videoWidth;
+  const rawH = region.h * videoHeight;
 
   const x1 = Math.max(0, rawX);
   const y1 = Math.max(0, rawY);
@@ -152,7 +164,7 @@ export async function runCaptureSequence(
 ): Promise<CaptureResult> {
   const capturedAt = new Date().toISOString();
   const overlayLines = buildOverlayLines(snapshot, capturedAt, aux);
-  const crop = computeCropRect(snapshot.mouthBox, video.videoWidth, video.videoHeight);
+  const crop = computeCropRect(snapshot.mouthBox, video.videoWidth, video.videoHeight, aux.cardboardMode);
 
   const exposureLockSuccess = await tryLockCapture(track);
   await sleep(CAPTURE_SEQUENCE.sensorSettleMs);
@@ -184,6 +196,7 @@ export async function runCaptureSequence(
       pitchDeg: snapshot.pitchDeg,
       yawDeg: snapshot.yawDeg,
       mar: snapshot.mar,
+      smileWidthRatio: snapshot.smileWidthRatio,
       mouthBoxWidth: snapshot.mouthBox?.w ?? 0,
       mouthBoxHeight: snapshot.mouthBox?.h ?? 0,
       exposureLockSuccess,

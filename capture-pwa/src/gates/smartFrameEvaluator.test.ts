@@ -13,7 +13,8 @@ function makeTracker(overrides: Partial<TrackerResult> = {}): TrackerResult {
     rollDeg: 0,
     yawDeg: 0,
     pitchDeg: 0,
-    mar: 0.78, // wide smile showing teeth, matching the real-device reference sample
+    mar: 0.25, // comfortably above the smileMar floor (0.08/0.05)
+    smileWidthRatio: 1.3, // comfortably above THRESHOLDS.smileWidth (1.2/1.05)
     landmarkChecksum: 1000,
     lipPoints: null,
     ...overrides,
@@ -75,30 +76,52 @@ describe('evaluateSmartFrame: pitch/yaw hysteresis', () => {
   });
 });
 
-describe('evaluateSmartFrame: MAR (smile width) gate', () => {
-  it('fails a closed/half smile and prompts to smile wide', () => {
-    const { evaluation } = run(createInitialSmartFrameState(), makeTracker({ mar: 0.1 }), 1, 0);
-    expect(evaluation.gateStatuses.mar).toBe(false);
+describe('evaluateSmartFrame: smile gate (MAR floor + width ratio)', () => {
+  it('fails a literally closed mouth (mar floor) even with a wide-ratio mouth', () => {
+    const { evaluation } = run(createInitialSmartFrameState(), makeTracker({ mar: 0.02 }), 1, 0);
+    expect(evaluation.gateStatuses.smile).toBe(false);
     expect(evaluation.prompt).toBe('Ask the patient to smile wide');
   });
 
-  it('fails a regular (not wide enough) smile', () => {
-    // Confirmed on-device: a regular smile scored well below the wide
-    // reference sample (mar 0.78) but above the original 0.35 guess,
-    // which is why that guess was too lenient.
-    const { evaluation } = run(createInitialSmartFrameState(), makeTracker({ mar: 0.45 }), 1, 0);
-    expect(evaluation.gateStatuses.mar).toBe(false);
+  it('fails a narrow smile (width ratio) even with a wide-open mouth', () => {
+    // The counter-example that exposed the original MAR-only bug: a
+    // mouth-agape expression (high mar) is not the same thing as a wide
+    // smile (high width ratio). Both metrics have to pass.
+    const { evaluation } = run(
+      createInitialSmartFrameState(),
+      makeTracker({ mar: 0.78, smileWidthRatio: 0.9 }),
+      1,
+      0,
+    );
+    expect(evaluation.gateStatuses.smile).toBe(false);
   });
 
-  it('passes a wide smile', () => {
-    const { evaluation } = run(createInitialSmartFrameState(), makeTracker({ mar: 0.78 }), 1, 0);
-    expect(evaluation.gateStatuses.mar).toBe(true);
+  it('passes a normal wide smile with teeth touching (low mar, high width ratio)', () => {
+    // Matches the real-device reference sample: mar 0.248 (teeth rows
+    // close together, not agape), smileWidthRatio comfortably wide.
+    const { evaluation } = run(
+      createInitialSmartFrameState(),
+      makeTracker({ mar: 0.248, smileWidthRatio: 1.3 }),
+      1,
+      0,
+    );
+    expect(evaluation.gateStatuses.smile).toBe(true);
+  });
+
+  it('passes a mouth-agape wide smile too (both metrics high)', () => {
+    const { evaluation } = run(
+      createInitialSmartFrameState(),
+      makeTracker({ mar: 0.78, smileWidthRatio: 1.3 }),
+      1,
+      0,
+    );
+    expect(evaluation.gateStatuses.smile).toBe(true);
   });
 
   it('holds the pass through the exit band once entered (hysteresis)', () => {
-    let { state, now } = run(createInitialSmartFrameState(), makeTracker({ mar: 0.78 }), 1, 0);
-    const { evaluation } = run(state, makeTracker({ mar: 0.52 }), 1, now);
-    expect(evaluation.gateStatuses.mar).toBe(true);
+    let { state, now } = run(createInitialSmartFrameState(), makeTracker({ mar: 0.25, smileWidthRatio: 1.3 }), 1, 0);
+    const { evaluation } = run(state, makeTracker({ mar: 0.06, smileWidthRatio: 1.1 }), 1, now);
+    expect(evaluation.gateStatuses.smile).toBe(true);
   });
 });
 
@@ -194,15 +217,15 @@ describe('evaluateSmartFrame: prompt priority and minimum display duration', () 
     const first = evaluateSmartFrame({ tracker: pitchFail, card: null, cardboardMode: false, nowMs: 0 }, state0);
     expect(first.prompt).not.toBeNull();
 
-    const marFail = makeTracker({ pitchDeg: 0, mar: 0.1 });
+    const smileFail = makeTracker({ pitchDeg: 0, mar: 0.01, smileWidthRatio: 0.5 });
     const second = evaluateSmartFrame(
-      { tracker: marFail, card: null, cardboardMode: false, nowMs: 400 },
+      { tracker: smileFail, card: null, cardboardMode: false, nowMs: 400 },
       first.state,
     );
     expect(second.prompt).toBe(first.prompt);
 
     const third = evaluateSmartFrame(
-      { tracker: marFail, card: null, cardboardMode: false, nowMs: 900 },
+      { tracker: smileFail, card: null, cardboardMode: false, nowMs: 900 },
       second.state,
     );
     expect(third.prompt).toBe('Ask the patient to smile wide');

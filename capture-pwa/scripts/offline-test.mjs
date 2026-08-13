@@ -64,6 +64,21 @@ try {
   await page.waitForSelector('#capture-video', { timeout: 30000 });
   console.log('[offline] camera + MediaPipe model loaded fully offline');
 
+  // Cardboard mode dynamically injects <script> tags for the vendored
+  // ArUco library (public/vendor/js-aruco2/, see cardDetector.ts) at
+  // runtime rather than importing it through the bundler. That's a
+  // separate code path from the precached model/wasm fetches above, so
+  // it needs its own offline check: nothing earlier in this script
+  // actually exercises it.
+  const pageErrors = [];
+  page.on('pageerror', (err) => pageErrors.push(err.message));
+  await page.click('#cardboard-toggle');
+  await page.waitForTimeout(1000);
+  const arucoLoaded = await page.evaluate(() => Boolean(window.AR?.Detector));
+  console.log('[offline] cardboard mode: vendored ArUco library loaded offline:', arucoLoaded);
+  if (!arucoLoaded) throw new Error('window.AR did not load offline in cardboard mode');
+  if (pageErrors.length > 0) throw new Error(`page errors while loading offline: ${pageErrors.join('; ')}`);
+
   await cdp.send('Network.emulateNetworkConditions', {
     offline: false,
     latency: 0,

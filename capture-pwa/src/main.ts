@@ -156,6 +156,7 @@ function startViewfinder(): void {
           pitchDeg: result.metadata.pitchDeg,
           yawDeg: result.metadata.yawDeg,
           mar: result.metadata.mar,
+          smileWidthRatio: result.metadata.smileWidthRatio,
           mouthBoxWidth: result.metadata.mouthBoxWidth,
           mouthBoxHeight: result.metadata.mouthBoxHeight,
           exposureLockSuccess: result.metadata.exposureLockSuccess,
@@ -239,6 +240,7 @@ function startViewfinder(): void {
         pitchDeg: trackerResult.pitchDeg,
         yawDeg: trackerResult.yawDeg,
         mar: trackerResult.mar,
+        smileWidthRatio: trackerResult.smileWidthRatio,
         mouthBox: trackerResult.mouthBox,
       };
     } else {
@@ -342,7 +344,7 @@ function updateReadout(
   refs.liveReadout.textContent =
     `pitchDeg: ${tr.pitchDeg.toFixed(2)}  yawDeg: ${tr.yawDeg.toFixed(2)}${status}\n` +
     `rollDeg: ${tr.rollDeg.toFixed(2)}  mar: ${tr.mar.toFixed(3)}\n` +
-    `hold: ${evaluation.holdCount}/${evaluation.holdRequired}`;
+    `smileWidth: ${tr.smileWidthRatio.toFixed(2)}  hold: ${evaluation.holdCount}/${evaluation.holdRequired}`;
   if (optimal) refs.liveReadout.classList.add('optimal');
 }
 

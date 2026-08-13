@@ -81,17 +81,29 @@ export const THRESHOLDS = {
   } satisfies MaxGateConfig,
 
   /**
-   * Mouth Aspect Ratio must be at least this to count as "smiling wide
-   * enough to show teeth" rather than a regular/closed smile. Calibrated
-   * against a real capture of a full wide smile showing both arches
-   * (mar ~0.78, burned into the debug overlay); the original 0.35/0.28
-   * guess was confirmed too lenient on-device, it passed a regular
-   * smile. Set with headroom below that reference sample so it still
-   * works across different mouth shapes/faces, not tuned to one photo.
+   * MAR is a mouth-OPEN floor only, not the "smiling wide" signal (see
+   * smileWidth below and the note on TrackerResult.mar). Low on purpose:
+   * a real wide smile with the teeth rows close together scored mar
+   * 0.248, confirmed on-device, so this only needs to rule out a
+   * literally closed mouth, not require a mouth-agape expression.
    */
   smileMar: {
-    enterMin: 0.6,
-    exitMin: 0.5,
+    enterMin: 0.08,
+    exitMin: 0.05,
+  } satisfies MinGateConfig,
+
+  /**
+   * Mouth width / interocular distance. The actual "smiling wide"
+   * signal, replacing MAR as primary after MAR was confirmed on-device
+   * to reject a valid wide smile (mar 0.248, teeth clearly visible,
+   * rows just touching) while accepting a mouth-agape expression (mar
+   * 0.784) as no more "smiling" than the rejected one. Placeholder
+   * starting point, not calibrated against a bank of real smile photos
+   * across different face shapes, expect to retune.
+   */
+  smileWidth: {
+    enterMin: 1.2,
+    exitMin: 1.05,
   } satisfies MinGateConfig,
 
   /**

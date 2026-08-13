@@ -16,14 +16,17 @@ A **Cardboard** toggle (top-left) switches the guidance between two
 modes:
 
 - **Without cardboard**: the Smart Frame gates on head pose (pitch/yaw,
-  each independently within 15 degrees) and smile width (Mouth Aspect
-  Ratio, so a closed or half smile doesn't pass as "smiling").
+  each independently within 15 degrees) and smile width, so a closed or
+  narrow smile doesn't pass as "smiling" (see "Smile detection: two
+  metrics, not one MAR" below for why it's not just MAR).
 - **With cardboard**: adds a dashed guide area below the mouth showing
   where to hold the calibration card, and a gate requiring all of its
   ArUco fiducial markers to be visible and the card held flat (checked
   via the marker quad's diagonal ratio). The system also estimates the
   light source direction from a specular highlight on the card, stored
-  alongside the image as auxiliary color-accuracy data.
+  alongside the image as auxiliary color-accuracy data. The saved crop
+  expands to include this card region, not just the mouth, so the photo
+  itself actually shows the card.
 
 The viewfinder keeps going after each shot (instead of stopping) so you
 can vary your angle and build up a set to choose from. Everything is
@@ -74,10 +77,23 @@ low). If a sign is backwards, flip `X_SIGN` / `Y_SIGN` in
 `src/tracker/mediapipeTracker.ts`; everything else reads from the
 derived angles, nothing else needs to change.
 
-Confirmed on-device: the direction arrow pointed the wrong way
-left/right (`X_SIGN` was flipped from `1` to `-1` to fix it); up/down
-was correct as shipped. Both `src/tracker/mediapipeTracker.ts` and
-`src/gates/directionPrompt.ts` document this.
+**Left/right direction arrow: under re-investigation, not re-flipped
+blindly a second time.** It was reported wrong on-device once, fixed by
+flipping `X_SIGN` from `1` to `-1`, then reported wrong again after that
+fix shipped. Flipping the sign a third time on another unverified guess
+isn't a real fix, it's a coin flip. A mirrored front-camera preview is
+supposed to behave like a real mirror (turning your own head to your own
+left should turn your reflection toward the left side of the screen too,
+mirrors don't swap left/right the way people assume, they swap front/
+back), and by that logic the current (`X_SIGN = -1`) behavior looks
+correct on the one photo available. The test that actually settles it:
+face the camera straight on, slowly turn your chin toward your own left
+shoulder (a physical action, no mirror interpretation needed), and read
+whether the arrow says "left" or "right" *at that moment*. If it says
+"right", the sign needs to flip back; if "left", it's correct and the
+first report was likely a mix-up mid-test. Whoever runs this test next,
+record the raw `yawDeg` sign at the same moment too, it's the ground
+truth `X_SIGN` is supposed to track.
 
 ## The capture loop
 
@@ -106,9 +122,9 @@ was correct as shipped. Both `src/tracker/mediapipeTracker.ts` and
 - **Gallery** (top-right) is always visible, not gated behind capturing
   something this session, tap it any time to open a grid of everything
   saved this session and before. Tap a thumbnail for the full image, its
-  metadata (pitch/yaw/roll/MAR, exposure lock, and, when captured with
-  the card, marker/flatness status and light direction), a **Save to
-  device** download, or **Delete**.
+  metadata (pitch/yaw/roll, smile width, MAR, exposure lock, and, when
+  captured with the card, marker/flatness status and light direction), a
+  **Save to device** download, or **Delete**.
 - All storage is `src/storage/captureStore.ts`, a thin IndexedDB
   wrapper. No network calls, no server. **Clear all** in the gallery
   wipes it.
@@ -133,6 +149,32 @@ loads them as real script tags in that order at startup and reads
 service worker the same way the MediaPipe model/wasm assets are, so card
 detection still works offline.
 
+## Smile detection: two metrics, not one MAR
+
+Confirmed on-device with two reference photos: a mouth-agape expression
+scored `mar 0.784`, and a normal wide smile with the teeth rows close
+together (clearly showing teeth, expected to pass) scored `mar 0.248`.
+Both are legitimate "smiling wide enough to show teeth" shots, but a
+single MAR (Mouth Aspect Ratio = vertical lip gap / mouth width) gate
+can't tell them apart from a closed smile, because MAR is the classical
+metric for detecting mouth *opening* (yawns, blinks-adjacent), not smile
+*width*. That was the actual bug, not just a miscalibrated number.
+
+Fixed by splitting into two metrics (`src/tracker/mediapipeTracker.ts`):
+
+- `mar` — kept, but demoted to a low floor (`THRESHOLDS.smileMar`,
+  0.08 enter / 0.05 exit) that only rules out a literally closed mouth.
+- `smileWidthRatio` — new: mouth width / interocular distance (outer eye
+  corners), a stable per-face scale reference. This is the actual
+  "smiling wide" signal (`THRESHOLDS.smileWidth`, 1.2 enter / 1.05 exit),
+  closer to the AU12/zygomaticus-pull family of smile detectors. Both
+  metrics have to pass for the Smart Frame's `smile` gate.
+
+`THRESHOLDS.smileWidth` is a placeholder starting point, not calibrated
+against a bank of real smile photos across different face shapes (I
+don't have raw landmark data for the reference photos, only pixels), so
+treat it the same as the card/light placeholders: expect to retune.
+
 ## Config decision open (handoff Section 10)
 
 `CAPTURE_MODE` in `src/config.ts` is set to `'front'`. Both `'front'`
@@ -156,30 +198,36 @@ operating the phone.
   That's a real signal (a highlight shifted toward one side means the
   light leans that way) but it is explicitly not a solved 3D light
   vector, there's no calibrated rig here for that.
-- **MAR (smile-width) threshold is calibrated off one real reference
-  sample, not a bank of photos.** `THRESHOLDS.smileMar` in
-  `src/config.ts` (0.6 enter / 0.5 exit) was raised after the original
-  0.35/0.28 guess was confirmed on-device to pass a regular smile, not
-  just a wide one showing both arches (the reference capture scored
-  mar ~0.78). Expect to retune with headroom in either direction once
-  there's a bank of real smile photos across different mouth shapes.
+- **Smile width threshold is a placeholder.** See "Smile detection: two
+  metrics, not one MAR" above.
+- **Roll (sideways head tilt) isn't gated in the Smart Frame.** The spec
+  only calls out pitch/yaw thresholds, so that's what's gated; `rollDeg`
+  is still tracked and shown in the readout/burned overlay but doesn't
+  block auto-capture or turn the frame amber. The older 7-gate system
+  did gate roll (max 5/6 degrees) for the same shade-matching reason a
+  tilted head could distort color/geometry measurement. Worth confirming
+  whether that was intentionally dropped or just not carried over when
+  the spec's gate set replaced the old one, this wasn't asked about
+  explicitly.
 - **No Web Worker.** The tracker and gate evaluator run on the main
   thread, driven by `requestVideoFrameCallback`. Both layers are already
   pure and DOM-free, so moving them into a worker is straightforward but
   not done here.
-- **Full end-to-end capture is unverified in this environment.** No real
-  camera/face/card was available to confirm the whole
-  capture-to-burn-in-to-gallery pipeline, including actual ArUco
-  detection, on a live shot; it's covered by unit tests (gate hysteresis
-  for pitch/yaw/MAR/card, capture-store round-trips) and headless smoke
-  tests (app loads, tracker initializes, cardboard toggle doesn't crash
-  the loop), but not an actual photo of an actual card.
+- **Without-cardboard capture is now confirmed working on a real
+  device** (live view, pose readout, smile detection all exercised
+  against real photos), which is how the smile-metric and direction-
+  arrow issues above were actually found. The with-cardboard path
+  (real ArUco marker detection, light estimation) is still unverified
+  against a real camera/card in this dev environment, only against unit
+  tests and a headless smoke test that confirms the toggle doesn't crash
+  the loop, not detection accuracy.
 - **Unit tests cover gate evaluator behavior** (pitch/yaw hysteresis
-  boundaries at 15/18, MAR hysteresis, the cardboard toggle's effect on
-  which gates count, capture triggering, prompt priority and the 800ms
-  minimum display lock) but not every hysteresis band exhaustively, and
-  not ArUco detection accuracy itself (that's the vendored library's
-  concern, not this codebase's).
+  boundaries at 15/18, the smile gate's MAR-floor and width-ratio
+  hysteresis, the cardboard toggle's effect on which gates count,
+  capture triggering, prompt priority and the 800ms minimum display
+  lock) but not every hysteresis band exhaustively, and not ArUco
+  detection accuracy itself (that's the vendored library's concern, not
+  this codebase's).
 
 ## Architecture
 
@@ -188,8 +236,9 @@ Three-layer split:
 - `src/tracker/` — Layer 1. `MediaPipeTracker` is the only file that
   imports `@mediapipe/tasks-vision`; everything else only sees the
   `TrackerResult` interface in `src/tracker/types.ts` (now including
-  `pitchDeg`/`yawDeg`/`mar` alongside the original angle/roll fields), so
-  the engine can be swapped later without touching gates or UI.
+  `pitchDeg`/`yawDeg`/`mar`/`smileWidthRatio` alongside the original
+  angle/roll fields), so the engine can be swapped later without
+  touching gates or UI.
 - `src/gates/` — Layer 2. `evaluateSmartFrame` in `smartFrameEvaluator.ts`
   is a pure function (no DOM access): same tracker result + card
   detection + cardboard-mode flag + prior state in, same evaluation out.

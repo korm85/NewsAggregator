@@ -8,9 +8,11 @@ import type { ArrowDirection } from './types';
  * feature does not use: the spec only calls for pose (split into pitch
  * and yaw, not a combined cone), smile width, and, when the calibration
  * card toggle is on, card presence/flatness. 'card' is only ever
- * evaluated when cardboardMode is true; see activeGateIds().
+ * evaluated when cardboardMode is true; see activeGateIds(). 'smile' is
+ * a single gate backed by two metrics (mar as a mouth-not-closed floor,
+ * smileWidthRatio as the actual width signal), see smartFrameEvaluator.ts.
  */
-export type SmartFrameGateId = 'face' | 'pitch' | 'yaw' | 'mar' | 'card';
+export type SmartFrameGateId = 'face' | 'pitch' | 'yaw' | 'smile' | 'card';
 
 export type SmartFramePassingState = Record<SmartFrameGateId, boolean>;
 
@@ -54,7 +56,7 @@ export function createInitialSmartFrameState(): SmartFrameGateState {
       face: false,
       pitch: false,
       yaw: false,
-      mar: false,
+      smile: false,
       card: false,
     },
     currentPrompt: null,
@@ -66,5 +68,5 @@ export function createInitialSmartFrameState(): SmartFrameGateState {
 
 /** Which gates count toward allPassed/capture this frame. */
 export function activeGateIds(cardboardMode: boolean): SmartFrameGateId[] {
-  return cardboardMode ? ['face', 'pitch', 'yaw', 'mar', 'card'] : ['face', 'pitch', 'yaw', 'mar'];
+  return cardboardMode ? ['face', 'pitch', 'yaw', 'smile', 'card'] : ['face', 'pitch', 'yaw', 'smile'];
 }

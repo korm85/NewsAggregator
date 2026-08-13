@@ -17,6 +17,7 @@ export interface StoredCapture {
   pitchDeg: number;
   yawDeg: number;
   mar: number;
+  smileWidthRatio: number;
   mouthBoxWidth: number;
   mouthBoxHeight: number;
   exposureLockSuccess: boolean;

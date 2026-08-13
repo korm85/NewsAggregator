@@ -1,3 +1,4 @@
+import { computeCardGuideRect } from '../capture/cardGuideRegion';
 import { MIRRORED } from '../config';
 import type { ArrowDirection } from '../gates/types';
 
@@ -113,13 +114,11 @@ export function drawCardGuide(
   mouthBox: { x: number; y: number; w: number; h: number },
   passing: boolean,
 ): void {
-  const widthFrac = Math.min(0.85, mouthBox.w * 2.5);
-  const heightFrac = 0.22;
-  const centerX = mouthBox.x + mouthBox.w / 2;
-  const x = Math.max(0, Math.min(1 - widthFrac, centerX - widthFrac / 2)) * canvasW;
-  const y = Math.min(1 - heightFrac, mouthBox.y + mouthBox.h + 0.03) * canvasH;
-  const w = widthFrac * canvasW;
-  const h = heightFrac * canvasH;
+  const rect = computeCardGuideRect(mouthBox);
+  const x = rect.x * canvasW;
+  const y = rect.y * canvasH;
+  const w = rect.w * canvasW;
+  const h = rect.h * canvasH;
 
   ctx.save();
   ctx.setLineDash([10, 8]);

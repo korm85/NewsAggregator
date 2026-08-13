@@ -30,6 +30,15 @@ export const OUTER_LIP_INDICES = [
 const INNER_LIP_TOP = 13;
 const INNER_LIP_BOTTOM = 14;
 
+/**
+ * Outer eye corners, standard MediaPipe face mesh landmarks, used as a
+ * stable head-scale reference (interocular distance) for the smile
+ * width ratio below. Same verify-on-a-real-face caveat as the lip
+ * indices.
+ */
+const RIGHT_EYE_OUTER = 33;
+const LEFT_EYE_OUTER = 263;
+
 const EMPTY_RESULT: TrackerResult = {
   detected: false,
   mouthBox: null,
@@ -39,6 +48,7 @@ const EMPTY_RESULT: TrackerResult = {
   yawDeg: 0,
   pitchDeg: 0,
   mar: 0,
+  smileWidthRatio: 0,
   landmarkChecksum: 0,
   lipPoints: null,
 };
@@ -98,6 +108,7 @@ export class MediaPipeTracker implements Tracker {
       video.videoHeight,
     );
     const mar = computeMar(landmarks, video.videoWidth, video.videoHeight);
+    const smileWidthRatio = computeSmileWidthRatio(landmarks, video.videoWidth, video.videoHeight);
 
     this.smoothedBox = smoothBox(this.smoothedBox, box, THRESHOLDS.mouthBoxSmoothingAlpha);
 
@@ -110,6 +121,7 @@ export class MediaPipeTracker implements Tracker {
       yawDeg,
       pitchDeg,
       mar,
+      smileWidthRatio,
       landmarkChecksum: checksum,
       lipPoints: points,
     };
@@ -153,11 +165,16 @@ export function computeAngles(m: Float32Array | number[]) {
 /**
  * Mouth Aspect Ratio: inner-lip vertical gap over mouth width, computed
  * in pixel space (not raw normalized coordinates) so the ratio isn't
- * skewed by a non-square video frame. Same family of metric as Eye
- * Aspect Ratio for blink detection; here it separates a closed/half
- * smile from one open enough to show teeth. The threshold that counts
- * as "smiling wide" lives in config.ts and is an initial estimate, not
- * yet calibrated against real captures.
+ * skewed by a non-square video frame. This is the classical MAR
+ * definition used for yawn/mouth-open detectors (same family as Eye
+ * Aspect Ratio for blinks): it measures how OPEN the mouth is, not how
+ * WIDE the smile is. Confirmed on-device that it's the wrong sole
+ * signal for "smiling wide enough to show teeth": a normal wide smile
+ * with the teeth rows close together scored mar 0.248, well below a
+ * mouth-agape reference sample at mar 0.784, despite both clearly
+ * showing teeth. Kept as a low floor in THRESHOLDS.smileMar (mouth not
+ * literally clamped shut), not the primary discriminator, see
+ * computeSmileWidthRatio below for that.
  */
 function computeMar(
   landmarks: { x: number; y: number }[],
@@ -181,6 +198,41 @@ function computeMar(
   if (mouthWidth === 0) return 0;
 
   return verticalGap / mouthWidth;
+}
+
+/**
+ * Mouth width relative to interocular distance (the gap between the
+ * outer eye corners), both in pixel space. Interocular distance is a
+ * stable per-face scale reference that doesn't change when someone
+ * smiles, so this reads as "how much wider than normal is the mouth
+ * stretched right now", closer to the AU12/zygomaticus-pull family of
+ * smile detectors than a raw MAR is. This is the primary "smiling wide"
+ * signal (THRESHOLDS.smileWidth); still a placeholder threshold, not
+ * calibrated against a bank of real smile photos across different face
+ * shapes.
+ */
+function computeSmileWidthRatio(
+  landmarks: { x: number; y: number }[],
+  videoWidth: number,
+  videoHeight: number,
+): number {
+  const rightEye = landmarks[RIGHT_EYE_OUTER];
+  const leftEye = landmarks[LEFT_EYE_OUTER];
+  const left = landmarks[OUTER_LIP_INDICES[0]]; // 61, left mouth corner
+  const right = landmarks[291]; // right mouth corner
+  if (!rightEye || !leftEye || !left || !right) return 0;
+
+  const interocularDist = Math.hypot(
+    (rightEye.x - leftEye.x) * videoWidth,
+    (rightEye.y - leftEye.y) * videoHeight,
+  );
+  const mouthWidth = Math.hypot(
+    (left.x - right.x) * videoWidth,
+    (left.y - right.y) * videoHeight,
+  );
+  if (interocularDist === 0) return 0;
+
+  return mouthWidth / interocularDist;
 }
 
 function computeMouthBox(

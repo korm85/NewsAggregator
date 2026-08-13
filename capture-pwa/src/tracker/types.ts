@@ -29,10 +29,22 @@ export interface TrackerResult {
   /**
    * Mouth Aspect Ratio: inner-lip vertical gap divided by mouth width,
    * in pixel space. Same family of metric as the classic Eye Aspect
-   * Ratio used for blink detection, here used to tell a closed/half
-   * smile from one wide enough to show teeth.
+   * Ratio used for blink detection: it measures how OPEN the mouth is
+   * (a yawn/mouth-open signal), not how wide the smile is. Used only as
+   * a low floor (mouth not literally clamped shut), see
+   * smileWidthRatio for the actual "smiling wide" signal.
    */
   mar: number;
+  /**
+   * Mouth width divided by interocular distance (outer eye corners),
+   * both in pixel space. Interocular distance is a stable per-face
+   * scale reference, so this reads as "how much wider than normal is
+   * the mouth stretched right now" and is the primary signal for
+   * "smiling wide enough to show teeth" (closer to the AU12/
+   * zygomaticus-pull family of smile detectors than MAR is, which only
+   * measures vertical opening, see mar above).
+   */
+  smileWidthRatio: number;
   /**
    * Sum of outer-lip landmark pixel coordinates for the current frame.
    * The gate evaluator compares this against recent history to estimate

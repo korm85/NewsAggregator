@@ -13,6 +13,7 @@ function makeTracker(overrides: Partial<TrackerResult> = {}): TrackerResult {
     yawDeg: 0,
     pitchDeg: 0,
     mar: 0,
+    smileWidthRatio: 0,
     landmarkChecksum: 1000,
     lipPoints: null,
     ...overrides,

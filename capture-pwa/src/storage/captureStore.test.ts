@@ -12,6 +12,7 @@ function makeCapture(overrides: Partial<StoredCapture> = {}): StoredCapture {
     pitchDeg: 4,
     yawDeg: 7,
     mar: 0.4,
+    smileWidthRatio: 1.3,
     mouthBoxWidth: 0.35,
     mouthBoxHeight: 0.15,
     exposureLockSuccess: true,

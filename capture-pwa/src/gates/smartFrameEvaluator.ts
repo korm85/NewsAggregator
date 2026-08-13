@@ -40,11 +40,18 @@ export function evaluateSmartFrame(
   if (!tracker.detected) {
     passing.pitch = false;
     passing.yaw = false;
-    passing.mar = false;
+    passing.smile = false;
   } else {
     passing.pitch = passMax(Math.abs(tracker.pitchDeg), prevPassing.pitch, THRESHOLDS.pitch);
     passing.yaw = passMax(Math.abs(tracker.yawDeg), prevPassing.yaw, THRESHOLDS.yaw);
-    passing.mar = passMin(tracker.mar, prevPassing.mar, THRESHOLDS.smileMar);
+    // Two metrics, one gate: MAR is just a mouth-not-closed floor,
+    // smileWidthRatio is the actual "smiling wide" signal (see
+    // TrackerResult and THRESHOLDS.smileWidth for why). Both need to
+    // pass. prevPassing.smile is shared as the hysteresis reference for
+    // both since they're only ever exposed as one combined gate.
+    const marOk = passMin(tracker.mar, prevPassing.smile, THRESHOLDS.smileMar);
+    const widthOk = passMin(tracker.smileWidthRatio, prevPassing.smile, THRESHOLDS.smileWidth);
+    passing.smile = marOk && widthOk;
   }
 
   // Card presence/flatness is a direct read of this frame's detection,
@@ -127,7 +134,7 @@ function buildPrompt(
       const { direction, text } = resolveAngleDirection(offAxisVec);
       return { text, direction };
     }
-    case 'mar':
+    case 'smile':
       return { text: 'Ask the patient to smile wide', direction: null };
     case 'card': {
       const text =
