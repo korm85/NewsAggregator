@@ -102,6 +102,14 @@ export const CAPTURE_SEQUENCE = {
 } as const;
 
 /**
+ * v2: the viewfinder keeps capturing (instead of stopping after one
+ * shot) so the user can vary their angle within the valid cone and
+ * build up a set of shots to pick from. Capped per session so a single
+ * sitting can't grow the on-device gallery unbounded.
+ */
+export const MAX_SESSION_CAPTURES = 8;
+
+/**
  * import.meta.env.BASE_URL reflects Vite's configured `base` (see
  * vite.config.ts): '/' in local dev, '/NewsAggregator/' when built for
  * GitHub Pages. Unlike asset references inside index.html/debug.html,

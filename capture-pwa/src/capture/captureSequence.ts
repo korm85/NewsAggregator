@@ -4,6 +4,7 @@ import { captureAndScoreFrame } from './frameScore';
 
 export interface CaptureMetadata {
   offAxisDeg: number;
+  offAxisVec: { x: number; y: number };
   rollDeg: number;
   mouthBoxWidth: number;
   mouthBoxHeight: number;
@@ -23,6 +24,7 @@ export interface CaptureResult {
 
 export interface TrackerSnapshot {
   offAxisDeg: number;
+  offAxisVec: { x: number; y: number };
   rollDeg: number;
   mouthBox: { w: number; h: number } | null;
 }
@@ -55,6 +57,20 @@ function playCaptureSound(): void {
 }
 
 /**
+ * Same numbers /debug.html shows live, burned into the saved image
+ * itself so the pose data travels with the photo (v2: "save the data
+ * you show in debug mode as an image").
+ */
+function buildOverlayLines(snapshot: TrackerSnapshot, capturedAt: string): string[] {
+  return [
+    `offAxisDeg: ${snapshot.offAxisDeg.toFixed(2)}`,
+    `offAxisVec: x=${snapshot.offAxisVec.x.toFixed(3)} y=${snapshot.offAxisVec.y.toFixed(3)}`,
+    `rollDeg: ${snapshot.rollDeg.toFixed(2)}`,
+    capturedAt,
+  ];
+}
+
+/**
  * Handoff Section 9. Runs after the gate evaluator has held all gates
  * passing for the required frame count and the on-screen ring has
  * finished filling. Every captured frame is drawn straight from the raw
@@ -66,6 +82,9 @@ export async function runCaptureSequence(
   track: MediaStreamTrack,
   snapshot: TrackerSnapshot,
 ): Promise<CaptureResult> {
+  const capturedAt = new Date().toISOString();
+  const overlayLines = buildOverlayLines(snapshot, capturedAt);
+
   const exposureLockSuccess = await tryLockCapture(track);
   await sleep(CAPTURE_SEQUENCE.sensorSettleMs);
 
@@ -75,7 +94,7 @@ export async function runCaptureSequence(
 
   const frames = [];
   for (let i = 0; i < CAPTURE_SEQUENCE.burstFrameCount; i++) {
-    frames.push(await captureAndScoreFrame(video, width, height));
+    frames.push(await captureAndScoreFrame(video, width, height, overlayLines));
     if (i < CAPTURE_SEQUENCE.burstFrameCount - 1) await sleep(interval);
   }
 
@@ -93,12 +112,13 @@ export async function runCaptureSequence(
     blob: best.blob,
     metadata: {
       offAxisDeg: snapshot.offAxisDeg,
+      offAxisVec: snapshot.offAxisVec,
       rollDeg: snapshot.rollDeg,
       mouthBoxWidth: snapshot.mouthBox?.w ?? 0,
       mouthBoxHeight: snapshot.mouthBox?.h ?? 0,
       exposureLockSuccess,
       deviceModel: navigator.userAgent,
-      capturedAt: new Date().toISOString(),
+      capturedAt,
       captureMode: CAPTURE_MODE,
       framesCaptured: CAPTURE_SEQUENCE.burstFrameCount,
       framesKept: kept.length,

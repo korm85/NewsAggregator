@@ -17,6 +17,7 @@ export async function captureAndScoreFrame(
   video: HTMLVideoElement,
   width: number,
   height: number,
+  overlayLines?: string[],
 ): Promise<ScoredFrame> {
   const fullRes = new OffscreenCanvas(width, height);
   const fullCtx = fullRes.getContext('2d')!;
@@ -56,6 +57,38 @@ export async function captureAndScoreFrame(
   const variance = n > 0 ? sumSq / n - mean * mean : 0;
   const score = variance * (1 - clippedFraction);
 
+  // Burned in after scoring so the overlay pixels never skew the
+  // sharpness/clipping measurement above.
+  if (overlayLines && overlayLines.length > 0) {
+    drawOverlayBar(fullCtx, width, height, overlayLines);
+  }
+
   const blob = await fullRes.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
   return { blob, score, clippedFraction };
+}
+
+/**
+ * Burns the live debug readout (same numbers /debug.html shows) into
+ * the bottom of the saved image, so each photo carries the pose data it
+ * was captured at.
+ */
+function drawOverlayBar(
+  ctx: OffscreenCanvasRenderingContext2D,
+  width: number,
+  height: number,
+  lines: string[],
+): void {
+  const lineHeight = Math.max(20, Math.round(height * 0.022));
+  const padding = Math.round(lineHeight * 0.6);
+  const barHeight = lines.length * lineHeight + padding * 2;
+
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+  ctx.fillRect(0, height - barHeight, width, barHeight);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `${lineHeight - 4}px ui-monospace, monospace`;
+  ctx.textBaseline = 'top';
+  lines.forEach((line, i) => {
+    ctx.fillText(line, padding, height - barHeight + padding + i * lineHeight);
+  });
 }

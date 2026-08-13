@@ -2,7 +2,7 @@ import { renderPermissionScreen } from './ui/permissionScreen';
 import { renderDeniedScreen } from './ui/deniedScreen';
 import { renderLoadingScreen } from './ui/loadingScreen';
 import { renderViewfinderScreen, type ViewfinderRefs } from './ui/viewfinderScreen';
-import { renderResultScreen } from './ui/resultScreen';
+import { renderGalleryScreen } from './ui/galleryScreen';
 import { drawOverlay } from './ui/overlay';
 import { MediaPipeTracker } from './tracker/mediapipeTracker';
 import { evaluateGates } from './gates/gateEvaluator';
@@ -10,6 +10,8 @@ import { createInitialGateState, type GateEvaluation, type GateState } from './g
 import { sampleClippedFraction } from './capture/exposureSample';
 import { CaptureController } from './capture/captureController';
 import { startCamera, CameraPermissionError } from './capture/deviceCamera';
+import { saveCapture, type StoredCapture } from './storage/captureStore';
+import { MAX_SESSION_CAPTURES } from './config';
 
 const root = document.getElementById('app')!;
 
@@ -41,13 +43,24 @@ async function onEnableCamera(): Promise<void> {
   startViewfinder();
 }
 
+function makeCaptureId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function startViewfinder(): void {
   if (!stream || !tracker) return;
 
   gateState = createInitialGateState();
   loopActive = true;
+  let sessionCaptureCount = 0;
+  let sessionFull = false;
 
-  const refs = renderViewfinderScreen(root);
+  const goToGallery = () => {
+    loopActive = false;
+    void renderGalleryScreen(root, startViewfinder);
+  };
+
+  const refs = renderViewfinderScreen(root, goToGallery);
   refs.video.srcObject = stream;
   refs.video.play().catch(() => {
     // Autoplay can be blocked in rare cases; the user still sees the
@@ -60,11 +73,39 @@ function startViewfinder(): void {
 
   const track = stream.getVideoTracks()[0];
 
+  function updateSessionBadge(): void {
+    if (sessionCaptureCount === 0) {
+      refs.sessionBadge.classList.add('hidden');
+      refs.doneButton.classList.add('hidden');
+      return;
+    }
+    refs.sessionBadge.textContent = `Saved ${sessionCaptureCount}/${MAX_SESSION_CAPTURES}`;
+    refs.sessionBadge.classList.remove('hidden');
+    refs.doneButton.classList.remove('hidden');
+  }
+
+  // v2: keeps capturing instead of stopping after one shot, so moving
+  // through the valid angle range builds up a set of shots to choose
+  // from later in the gallery, capped so one sitting can't run away.
   const controller = new CaptureController((result) => {
-    loopActive = false;
-    renderResultScreen(root, result, () => {
-      URL.revokeObjectURL(result.imageUrl);
-      startViewfinder();
+    const stored: StoredCapture = {
+      id: makeCaptureId(),
+      blob: result.blob,
+      offAxisDeg: result.metadata.offAxisDeg,
+      offAxisVec: result.metadata.offAxisVec,
+      rollDeg: result.metadata.rollDeg,
+      mouthBoxWidth: result.metadata.mouthBoxWidth,
+      mouthBoxHeight: result.metadata.mouthBoxHeight,
+      exposureLockSuccess: result.metadata.exposureLockSuccess,
+      captureMode: result.metadata.captureMode,
+      capturedAt: result.metadata.capturedAt,
+    };
+    URL.revokeObjectURL(result.imageUrl);
+
+    void saveCapture(stored).then(() => {
+      sessionCaptureCount++;
+      if (sessionCaptureCount >= MAX_SESSION_CAPTURES) sessionFull = true;
+      updateSessionBadge();
     });
   });
 
@@ -88,17 +129,20 @@ function startViewfinder(): void {
     );
     gateState = evaluation.state;
 
-    controller.handleFrame(
-      now,
-      evaluation,
-      {
-        offAxisDeg: trackerResult.offAxisDeg,
-        rollDeg: trackerResult.rollDeg,
-        mouthBox: trackerResult.mouthBox,
-      },
-      refs.video,
-      track,
-    );
+    if (!sessionFull) {
+      controller.handleFrame(
+        now,
+        evaluation,
+        {
+          offAxisDeg: trackerResult.offAxisDeg,
+          offAxisVec: trackerResult.offAxisVec,
+          rollDeg: trackerResult.rollDeg,
+          mouthBox: trackerResult.mouthBox,
+        },
+        refs.video,
+        track,
+      );
+    }
 
     drawOverlay(
       overlayCtx,
@@ -110,7 +154,7 @@ function startViewfinder(): void {
       controller.phase !== 'idle' ? controller.ringProgress : 0,
     );
 
-    updatePromptUI(refs, evaluation, controller.phase);
+    updatePromptUI(refs, evaluation, controller.phase, sessionFull);
 
     scheduleNextFrame(refs.video, onFrame);
   }
@@ -133,7 +177,17 @@ function updatePromptUI(
   refs: ViewfinderRefs,
   evaluation: GateEvaluation,
   phase: 'idle' | 'ring' | 'processing',
+  sessionFull: boolean,
 ): void {
+  refs.promptBanner.classList.remove('optimal');
+
+  if (sessionFull) {
+    refs.promptBanner.textContent = 'Gallery full';
+    refs.promptBanner.classList.remove('hidden');
+    refs.holdProgress.textContent = 'Tap Done to review';
+    return;
+  }
+
   if (phase === 'processing') {
     refs.promptBanner.classList.add('hidden');
     refs.holdProgress.textContent = 'Capturing';
@@ -142,6 +196,10 @@ function updatePromptUI(
 
   if (evaluation.prompt) {
     refs.promptBanner.textContent = evaluation.prompt;
+    refs.promptBanner.classList.remove('hidden');
+  } else if (evaluation.allPassed) {
+    refs.promptBanner.textContent = 'Optimal';
+    refs.promptBanner.classList.add('optimal');
     refs.promptBanner.classList.remove('hidden');
   } else {
     refs.promptBanner.classList.add('hidden');
