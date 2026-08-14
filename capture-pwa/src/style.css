@@ -178,7 +178,9 @@ button.secondary {
   top: max(12px, env(safe-area-inset-top));
   z-index: 4;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  max-width: calc(100vw - 24px);
 }
 
 .top-bar {
@@ -230,6 +232,48 @@ button.secondary {
 
 .cardboard-toggle input {
   margin: 0;
+}
+
+/**
+ * POC-only tuning panel for the runtime-adjustable distance gate (see
+ * config.ts DISTANCE_GATE_DEFAULTS): hidden by default, revealed by the
+ * "Debug" button in .top-bar-left, so it never gets in the way of a
+ * normal capture session.
+ */
+.debug-panel {
+  position: absolute;
+  top: max(56px, calc(env(safe-area-inset-top) + 48px));
+  left: max(12px, env(safe-area-inset-left));
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  padding: 12px 16px;
+  width: min(80vw, 280px);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.debug-panel.hidden {
+  display: none;
+}
+
+.debug-panel-title {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.debug-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.debug-panel input[type='range'] {
+  width: 100%;
 }
 
 .prompt-banner {

@@ -2,8 +2,7 @@ import { CAPTURE_SEQUENCE } from '../config';
 import type { CardDetectionResult } from './cardDetector';
 import { computeCardGuideRect, unionRect, type NormalizedRect } from './cardGuideRegion';
 import { releaseLock, tryLockCapture } from './deviceCamera';
-import { captureAndScoreFrame, cropAndOverlayBlob, type CropRect } from './frameScore';
-import { takeHighResPhoto } from './imageCapture';
+import { captureAndScoreFrame, type CropRect } from './frameScore';
 import type { LightEstimate } from './lightEstimator';
 import { startVideoRecording, type RecordedVideo } from './videoRecorder';
 
@@ -21,29 +20,22 @@ export interface CaptureMetadata {
   deviceModel: string;
   capturedAt: string;
   captureMode: 'front' | 'rear';
-  framesCaptured: number;
-  framesKept: number;
   /** Data Storage spec: "the calibration card detection data, and the computed light source direction". */
   cardboardMode: boolean;
   card: CardDetectionResult | null;
   lightDirection: { x: number; y: number } | null;
   /**
-   * Supplementary video clip recorded concurrently with the raw-frame
-   * burst, full camera frame (see videoRecorder.ts for why it isn't
-   * cropped). Null when MediaRecorder is unsupported or recording
-   * failed, never used for color/shade measurement.
+   * The primary color-calibration artifact under the video-first
+   * design: a full-frame clip recorded across the entire Active Sweep
+   * window (see videoRecorder.ts), capturing multiple reflection angles
+   * as the user slowly moves the camera. The offline post-processor
+   * extracts angular telemetry and removes glare from this, more
+   * accurately than the live browser tracker could -- the app itself
+   * does not attempt either. Null when MediaRecorder is unsupported or
+   * recording failed for any reason; a failure here never blocks the
+   * still-image anchor below.
    */
   video: RecordedVideo | null;
-  /**
-   * Which pipeline produced the saved still. 'imageCapture' means the
-   * browser's dedicated photo pipeline was used (higher resolution
-   * than the live video stream, Chrome/Android only, see
-   * imageCapture.ts); 'canvas' is the original scored-video-frame
-   * path, used whenever ImageCapture is unsupported (all of iOS/
-   * Safari today) or fails for any reason. Recorded so real-world
-   * quality/reliability per platform can be judged later.
-   */
-  stillSource: 'imageCapture' | 'canvas';
 }
 
 export interface CaptureResult {
@@ -171,15 +163,35 @@ function computeCropRect(region: NormalizedRect, videoWidth: number, videoHeight
 }
 
 /**
- * Handoff Section 9. Runs after the gate evaluator has held all gates
- * passing for the required frame count and the on-screen ring has
- * finished filling. The still image's frames are drawn straight from
- * the raw video track to an OffscreenCanvas, never sourced from
- * MediaRecorder output (handoff Section 2, decision 3, still binding
- * for the measurement image). A separate, purely supplementary video
- * clip IS recorded via MediaRecorder concurrently (videoRecorder.ts) —
- * that's a different artifact serving a different purpose, not a
- * relaxation of the still-image constraint.
+ * Video-first "Active Sweep" capture. Runs after the gate evaluator has
+ * held every active gate (pitch/yaw/roll/distance/smile, +card in
+ * cardboard mode) passing for the required frame count -- i.e. the
+ * geometry is strictly locked at the instant this fires. Two artifacts
+ * come out of the ~5.5s window that follows:
+ *
+ * 1. A single uncompressed still, grabbed from the raw video track at
+ *    the exact start of the window (before the user begins sweeping),
+ *    so it reflects the strictly-gated starting geometry. Never sourced
+ *    from MediaRecorder output (lossy) and never from the browser's
+ *    native ImageCapture photo pipeline either -- ImageCapture applies
+ *    its own hardware tone mapping that can't be undone, which is worse
+ *    for a color-calibration anchor than the resolution it would gain.
+ *    There is deliberately no multi-frame scoring/selection anymore:
+ *    the downstream color algorithm doesn't need a perfect still, it
+ *    needs the video below.
+ * 2. A supplementary MediaRecorder clip, full camera frame (not cropped,
+ *    see videoRecorder.ts), recording for the sweep's entire duration.
+ *    This is now the primary color-calibration artifact: the multiple
+ *    reflection angles the sweep produces let the offline post-
+ *    processor extract angular telemetry and remove glare more
+ *    accurately than the live browser tracker could. No highlight
+ *    clipping/rejection is applied to it here -- every specular
+ *    highlight is deliberately passed through unmodified.
+ *
+ * The live tracking loop is expected to be paused by the caller for
+ * this entire window (see main.ts onFrame) -- both to avoid resource
+ * contention with the recorder, and because nothing here consumes a
+ * live tracking result once the still anchor is grabbed.
  */
 export async function runCaptureSequence(
   video: HTMLVideoElement,
@@ -196,44 +208,17 @@ export async function runCaptureSequence(
   const exposureLockSuccess = await tryLockCapture(track);
   await sleep(CAPTURE_SEQUENCE.sensorSettleMs);
 
-  // Wraps the existing raw-frame burst below with the same 5-second
-  // window, recorded from the raw track (see videoRecorder.ts on why
-  // full-frame, not cropped). A failure to start returns null and the
-  // burst proceeds exactly as before, video is purely supplementary.
+  // The uncompressed color anchor: grabbed now, before the sweep below
+  // begins, so it's the strictly-gated starting frame, not an arbitrary
+  // mid-sweep moment.
+  const stillFrame = await captureAndScoreFrame(video, crop, overlayLines);
+
+  // Records from the raw track for the sweep's full duration. A
+  // failure to start returns null; the still anchor above is already
+  // captured by this point regardless, so video is purely additive.
   const recording = startVideoRecording(track);
-
-  const interval = CAPTURE_SEQUENCE.burstDurationMs / CAPTURE_SEQUENCE.burstFrameCount;
-
-  const frames = [];
-  for (let i = 0; i < CAPTURE_SEQUENCE.burstFrameCount; i++) {
-    frames.push(await captureAndScoreFrame(video, crop, overlayLines));
-    if (i < CAPTURE_SEQUENCE.burstFrameCount - 1) await sleep(interval);
-  }
-
+  await sleep(CAPTURE_SEQUENCE.burstDurationMs);
   const recordedVideo = recording ? await recording.stop().catch(() => null) : null;
-
-  frames.sort((a, b) => b.score - a.score);
-  const kept = frames.slice(0, CAPTURE_SEQUENCE.keepBestCount);
-  const best = kept[0];
-
-  // Attempted only after the reflection-scanning burst above has
-  // already picked its best moment, so this can't add latency to that
-  // timing-sensitive loop. On success, the high-res photo replaces the
-  // scored canvas frame as the saved still (cropped to the same region
-  // so behavior stays consistent whether or not this path is
-  // available); on any failure (including simply unsupported, e.g.
-  // iOS/Safari today) bestBlob stays the existing canvas frame.
-  const highResPhoto = await takeHighResPhoto(track);
-  let bestBlob = best.blob;
-  let stillSource: CaptureMetadata['stillSource'] = 'canvas';
-  if (highResPhoto) {
-    try {
-      bestBlob = await cropAndOverlayBlob(highResPhoto, stillCropRect, overlayLines);
-      stillSource = 'imageCapture';
-    } catch {
-      // Decoding/cropping the high-res photo failed; keep the canvas frame.
-    }
-  }
 
   fireHaptics();
   playCaptureSound();
@@ -241,8 +226,8 @@ export async function runCaptureSequence(
   await releaseLock(track);
 
   return {
-    imageUrl: URL.createObjectURL(bestBlob),
-    blob: bestBlob,
+    imageUrl: URL.createObjectURL(stillFrame.blob),
+    blob: stillFrame.blob,
     metadata: {
       offAxisDeg: snapshot.offAxisDeg,
       offAxisVec: snapshot.offAxisVec,
@@ -257,13 +242,10 @@ export async function runCaptureSequence(
       deviceModel: navigator.userAgent,
       capturedAt,
       captureMode,
-      framesCaptured: CAPTURE_SEQUENCE.burstFrameCount,
-      framesKept: kept.length,
       cardboardMode: aux.cardboardMode,
       card: aux.card,
       lightDirection: aux.light?.direction2D ?? null,
       video: recordedVideo,
-      stillSource,
     },
   };
 }

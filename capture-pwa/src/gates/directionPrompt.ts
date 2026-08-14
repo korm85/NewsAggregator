@@ -1,5 +1,5 @@
 import { MIRRORED } from '../config';
-import type { ArrowDirection } from './types';
+import type { ArrowDirection } from './smartFrameTypes';
 
 /**
  * Handoff Section 8: "the camera must move toward the direction the

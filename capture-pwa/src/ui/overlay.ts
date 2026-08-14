@@ -1,6 +1,6 @@
 import { computeCardGuideRect } from '../capture/cardGuideRegion';
 import { MIRRORED } from '../config';
-import type { ArrowDirection } from '../gates/types';
+import type { ArrowDirection } from '../gates/smartFrameTypes';
 
 /**
  * The overlay canvas gets the same CSS mirror transform as the video

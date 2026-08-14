@@ -21,13 +21,6 @@ export const CAPTURE_MODE: 'front' | 'rear' = 'front';
  */
 export const MIRRORED = CAPTURE_MODE === 'front';
 
-export interface RangeGateConfig {
-  enterMin: number;
-  enterMax: number;
-  exitMin: number;
-  exitMax: number;
-}
-
 export interface MaxGateConfig {
   enterMax: number;
   exitMax: number;
@@ -39,27 +32,25 @@ export interface MinGateConfig {
   exitMin: number;
 }
 
+/**
+ * Distance gate defaults: mouth-box width as a fraction of frame width
+ * (landmarks are normalized 0-1, so this needs no extra division). 0.15-
+ * 0.25 approximates 15-25cm from camera to face, chosen to guarantee
+ * sharp optical focus, but -- like the first two smileWidth guesses
+ * before real on-device data corrected them -- this range is a starting
+ * estimate, not yet calibrated against a real capture set. Runtime-
+ * adjustable (see the viewfinder's debug panel, `onDistanceRangeChange`
+ * in main.ts) specifically so it can be retuned on a real device without
+ * a redeploy. `evaluateSmartFrame` falls back to this default whenever a
+ * caller doesn't supply its own `distanceRange` (e.g. every existing
+ * unit test).
+ */
+export const DISTANCE_GATE_DEFAULTS = { min: 0.15, max: 0.25 } as const;
+
+/** Buffer added outside [min, max] before an already-passing distance gate exits, so the adjustable range doesn't need separate enter/exit sliders. */
+export const DISTANCE_GATE_HYSTERESIS = 0.02;
+
 export const THRESHOLDS = {
-  /** Mouth box width as a fraction of frame width. */
-  distance: {
-    enterMin: 0.3,
-    enterMax: 0.4,
-    exitMin: 0.29,
-    exitMax: 0.41,
-  } satisfies RangeGateConfig,
-
-  /** Mouth box center offset from frame center, fraction of frame size. */
-  centering: {
-    enterMax: 0.06,
-    exitMax: 0.072,
-  } satisfies MaxGateConfig,
-
-  /** Off-axis angle in degrees. Spec-mandated values: enter 15, exit 18. */
-  angle: {
-    enterMax: 15,
-    exitMax: 18,
-  } satisfies MaxGateConfig,
-
   /**
    * Separate pitch/yaw thresholds (Smart Frame spec: max 15 degrees
    * variance on each axis independently, not the combined offAxisDeg
@@ -119,26 +110,6 @@ export const THRESHOLDS = {
     exitMin: 0.45,
   } satisfies MinGateConfig,
 
-  /**
-   * Stability threshold in "checksum units" (see TrackerResult.landmarkChecksum).
-   * The checksum is the sum of lip-landmark pixel coordinates; its
-   * frame-to-frame delta divided by point count approximates mean
-   * per-landmark pixel movement.
-   */
-  stability: {
-    enterMax: 1.5,
-    exitMax: 1.8,
-  } satisfies MaxGateConfig,
-
-  /** Fraction of mouth-box pixels clipped (>250 in any channel). */
-  exposure: {
-    enterMax: 0.005,
-    exitMax: 0.006,
-  } satisfies MaxGateConfig,
-
-  /** Frames of history the gate evaluator keeps for stability + hold checks. */
-  historyLength: 5,
-
   /** Consecutive all-pass frames required before the capture sequence fires. */
   holdFramesRequired: 5,
 
@@ -156,17 +127,32 @@ export const CAPTURE_SEQUENCE = {
   ringFillMs: 400,
   sensorSettleMs: 500,
   /**
-   * Smart Frame spec: 5 seconds "to manage reflections". Sampled as raw
-   * canvas frames across the window (never MediaRecorder-encoded video,
-   * see handoff Section 2 decision 3 on why: 8-bit lossy 4:2:0 encoding
-   * would corrupt the color data this product measures), scored the
-   * same way the original short burst was, so the frame that ends up
-   * saved has no specular reflection instead of just being sharp.
+   * The "Active Sweep" window: the uncompressed still anchor is grabbed
+   * at the very start of this window (before the user begins moving the
+   * camera), then a supplementary video records for its full duration
+   * while the user slowly sweeps the camera side-to-side. The video, not
+   * the still, is now the primary color-calibration artifact -- the
+   * offline post-processor extracts angular telemetry and removes glare
+   * from the multiple reflection angles the sweep captures, more
+   * accurately than the live browser tracker could. No per-frame
+   * scoring/selection happens client-side anymore (see captureSequence.ts).
    */
-  burstFrameCount: 15,
   burstDurationMs: 5000,
-  keepBestCount: 3,
 } as const;
+
+/**
+ * Target bitrate for the supplementary MediaRecorder video
+ * (videoRecorder.ts). The video is now the primary color-calibration
+ * artifact (see CAPTURE_SEQUENCE above), so its encode quality matters
+ * more than before: a high target minimizes compression artifacts in
+ * the specular-highlight detail the offline glare-removal step depends
+ * on. Passed as `videoBitsPerSecond`, a hint the encoder clamps to
+ * whatever it can actually sustain rather than erroring on, same
+ * `ideal`-not-`exact` philosophy as the resolution constraints in
+ * deviceCamera.ts -- asking high is safe, it can't fail a device that
+ * tops out lower.
+ */
+export const TARGET_VIDEO_BITRATE_BPS = 16_000_000;
 
 /**
  * Calibration-card (ArUco) detection and light-direction estimation.

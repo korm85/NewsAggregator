@@ -1,11 +1,16 @@
 /**
- * Handoff Section 9 step 5: score each burst frame by sharpness and
- * clipping, keep the best. Sharpness is approximated with a Laplacian
- * variance over a small downsampled grayscale copy (cheap); clipping is
- * the fraction of pixels with any channel above 250. Scoring never
- * touches the full-resolution pixels, only the frame that gets encoded
- * to JPEG is full-res, matching "captured stills are full track
- * resolution" while keeping the per-frame scoring cost small.
+ * Draws a single crop of the live video to an offscreen canvas, burns
+ * the overlay bar in, and encodes it. `score`/`clippedFraction` are
+ * vestigial from when this ran across a 15-frame burst and picked the
+ * sharpest/least-clipped result (see captureSequence.ts) -- the still
+ * image is now a single uncompressed frame grabbed at the exact start
+ * of the capture window, before the sweep begins, so nothing compares
+ * scores anymore. Kept on the return type since they're cheap to
+ * compute and harmless, not because anything currently reads them.
+ * Sharpness is approximated with a Laplacian variance over a small
+ * downsampled grayscale copy; clipping is the fraction of pixels with
+ * any channel above 250. Scoring never touches the full-resolution
+ * pixels, only the frame that gets encoded to JPEG is full-res.
  */
 export interface ScoredFrame {
   blob: Blob;
@@ -81,44 +86,6 @@ export async function captureAndScoreFrame(
 
   const blob = await fullRes.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
   return { blob, score, clippedFraction };
-}
-
-/**
- * Crops a source image (e.g. a high-res ImageCapture photo, which has
- * its own native dimensions distinct from the live video stream's) to
- * a normalized (0-1) region and burns the overlay bar into it, so an
- * ImageCapture-sourced still ends up cropped to the same mouth region
- * as a canvas-sourced one instead of showing the full frame -- keeping
- * capture output consistent regardless of which pipeline produced it
- * (see imageCapture.ts).
- */
-export async function cropAndOverlayBlob(
-  sourceBlob: Blob,
-  region: { x: number; y: number; w: number; h: number },
-  overlayLines?: string[],
-): Promise<Blob> {
-  const bitmap = await createImageBitmap(sourceBlob);
-  const rawX = region.x * bitmap.width;
-  const rawY = region.y * bitmap.height;
-  const rawW = region.w * bitmap.width;
-  const rawH = region.h * bitmap.height;
-  const x1 = Math.max(0, rawX);
-  const y1 = Math.max(0, rawY);
-  const x2 = Math.min(bitmap.width, rawX + rawW);
-  const y2 = Math.min(bitmap.height, rawY + rawH);
-  const width = Math.max(1, Math.round(x2 - x1));
-  const height = Math.max(1, Math.round(y2 - y1));
-
-  const canvas = new OffscreenCanvas(width, height);
-  const ctx = canvas.getContext('2d')!;
-  ctx.drawImage(bitmap, x1, y1, x2 - x1, y2 - y1, 0, 0, width, height);
-  bitmap.close();
-
-  if (overlayLines && overlayLines.length > 0) {
-    drawOverlayBar(ctx, width, height, overlayLines);
-  }
-
-  return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
 }
 
 /**

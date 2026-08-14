@@ -1,18 +1,23 @@
 import type { CardDetectionResult } from '../capture/cardDetector';
 import type { TrackerResult } from '../tracker/types';
-import type { ArrowDirection } from './types';
 
 /**
- * Smart Frame spec gates. Distinct from the older 7-gate set in
- * gates/types.ts (distance/centering/stability/exposure), which this
- * feature does not use: the spec only calls for pose (split into pitch
- * and yaw, not a combined cone), smile width, and, when the calibration
- * card toggle is on, card presence/flatness. 'card' is only ever
+ * Owned here now that the legacy gates/types.ts (7-gate system) is gone
+ * -- this is the only gate system left, so there's no longer a reason
+ * for ArrowDirection to live in a separate shared file.
+ */
+export type ArrowDirection = 'left' | 'right' | 'up' | 'down' | null;
+
+/**
+ * Smart Frame spec gates, extended for video-first "Active Sweep"
+ * capture: 'roll' and 'distance' lock the starting geometry strictly
+ * (both always active, not cardboard-specific) before the sweep begins,
+ * on top of the original pose/smile/card set. 'card' is only ever
  * evaluated when cardboardMode is true; see activeGateIds(). 'smile' is
  * a single gate backed by two metrics (mar as a mouth-not-closed floor,
  * smileWidthRatio as the actual width signal), see smartFrameEvaluator.ts.
  */
-export type SmartFrameGateId = 'face' | 'pitch' | 'yaw' | 'smile' | 'card';
+export type SmartFrameGateId = 'face' | 'pitch' | 'yaw' | 'roll' | 'distance' | 'smile' | 'card';
 
 export type SmartFramePassingState = Record<SmartFrameGateId, boolean>;
 
@@ -48,6 +53,14 @@ export interface SmartFrameInputs {
   card: CardDetectionResult | null;
   cardboardMode: boolean;
   nowMs: number;
+  /**
+   * Runtime-adjustable target range for the distance gate (mouth-box
+   * width as a fraction of frame width), sourced from the viewfinder's
+   * debug panel in main.ts. Optional so every existing/older caller
+   * (unit tests included) keeps compiling and behaving sanely: falls
+   * back to config.ts's DISTANCE_GATE_DEFAULTS when omitted.
+   */
+  distanceRange?: { min: number; max: number };
 }
 
 export function createInitialSmartFrameState(): SmartFrameGateState {
@@ -56,6 +69,8 @@ export function createInitialSmartFrameState(): SmartFrameGateState {
       face: false,
       pitch: false,
       yaw: false,
+      roll: false,
+      distance: false,
       smile: false,
       card: false,
     },
@@ -68,5 +83,6 @@ export function createInitialSmartFrameState(): SmartFrameGateState {
 
 /** Which gates count toward allPassed/capture this frame. */
 export function activeGateIds(cardboardMode: boolean): SmartFrameGateId[] {
-  return cardboardMode ? ['face', 'pitch', 'yaw', 'smile', 'card'] : ['face', 'pitch', 'yaw', 'smile'];
+  const base: SmartFrameGateId[] = ['face', 'pitch', 'yaw', 'roll', 'distance', 'smile'];
+  return cardboardMode ? [...base, 'card'] : base;
 }

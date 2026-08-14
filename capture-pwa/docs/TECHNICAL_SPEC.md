@@ -40,7 +40,7 @@ An explicit open product decision (not yet made, see §13): whether the shipped 
 | 2. Gates | `src/gates/smartFrameEvaluator.ts` | Pure function: `(SmartFrameInputs, prevState) → SmartFrameEvaluation`. No DOM access, deterministic, unit-tested. |
 | 3. UI / Capture | `src/ui/*`, `src/capture/*`, `src/main.ts` | Camera setup, canvas overlay drawing, capture sequence, screens, orchestration. |
 
-**Dead code flag**: `src/gates/gateEvaluator.ts`, `src/capture/captureController.ts`, and `src/gates/types.ts` implement an *older* 7-gate system (distance/centering/stability/exposure) that predates the "Smart Frame" spec described here. It still compiles and has its own unit tests, but **`main.ts` does not use it at all** — `evaluateSmartFrame` fully replaced it. It is inert weight in the codebase, a candidate for deletion or an explicit "why is this still here" decision.
+**Update since first draft of this document**: the older 7-gate system (`gates/gateEvaluator.ts`, `capture/captureController.ts`, `gates/types.ts`, `capture/exposureSample.ts`) flagged below as dead code has since been **deleted outright**. Its `distance` and `roll` thresholds were reused directly in `smartFrameEvaluator.ts` (see §7) rather than discarded. `evaluateSmartFrame` is now the only gate evaluator in the codebase.
 
 ## 4. Screen / state machine
 
@@ -75,42 +75,43 @@ permission ──(Enable camera)──▶ loading ──▶ viewfinder ◀──
 - **Mouth box**: bounding box of 20 outer-lip landmark indices (standard MediaPipe `FACEMESH_LIPS` outer ring), padded 15% each side, then EMA-smoothed frame-to-frame (`alpha = 0.3`) to reduce jitter. Drives the on-screen outline, the still-image crop region, and the card-guide anchor.
 - **`mar`** (Mouth Aspect Ratio — inner-lip vertical gap ÷ mouth width): kept only as a low "mouth isn't literally closed" floor. Confirmed on-device to be the *wrong* primary smile signal — a real wide smile with teeth rows close together scored `mar 0.248`, well below a mouth-agape (non-smiling) reference at `mar 0.784`.
 - **`smileWidthRatio`** (mouth width ÷ interocular distance, outer eye corners 33/263): the actual "smiling wide" signal, added to replace MAR as primary. Uses eye-to-eye distance as a per-face scale reference that doesn't change when someone smiles.
-- **`landmarkChecksum`**: sum of lip-landmark pixel coordinates, used only by the legacy (unwired) 7-gate stability check — dead weight in the current pipeline, same caveat as §3.
+- **`landmarkChecksum`**: sum of lip-landmark pixel coordinates. Was used only by the now-deleted 7-gate stability check; still computed and returned on every `TrackerResult` but nothing currently reads it — a small, harmless piece of dead weight left over from that deletion.
 
 ## 7. Gate evaluation — "Smart Frame" (`src/gates/smartFrameEvaluator.ts`, thresholds in `src/config.ts`)
 
-Pure function `evaluateSmartFrame(inputs, prevState) → evaluation`. Five possible gates, `'face' | 'pitch' | 'yaw' | 'smile' | 'card'`; `'card'` only participates when cardboard mode is on (`activeGateIds()`).
+Pure function `evaluateSmartFrame(inputs, prevState) → evaluation`. Seven possible gates, `'face' | 'pitch' | 'yaw' | 'roll' | 'distance' | 'smile' | 'card'`; `'card'` only participates when cardboard mode is on (`activeGateIds()`) — `roll` and `distance` are always active, added to strictly lock the starting geometry before the video-first "Active Sweep" capture window (§8) begins.
 
 | Gate | Pass condition | Enter / exit (hysteresis) |
 |---|---|---|
 | `face` | a face is detected this frame | n/a |
 | `pitch` | `\|pitchDeg\| ≤` threshold | 15° / 18° |
 | `yaw` | `\|yawDeg\| ≤` threshold | 15° / 18° |
+| `roll` | `\|rollDeg\| ≤` threshold | 5° / 6° (reused from the deleted 7-gate system's threshold, unchanged) |
+| `distance` | mouth-box width (fraction of frame width) within `[min, max]` | default `0.15`/`0.25` (`DISTANCE_GATE_DEFAULTS`), **runtime-adjustable** (§12), `±0.02` hysteresis buffer applied once passing |
 | `smile` | `mar ≥` floor **and** `smileWidthRatio ≥` threshold | mar 0.08/0.05, width 0.55/0.45 |
 | `card` (cardboard only) | all 4 ArUco markers visible **and** card held flat | no hysteresis — direct per-frame read; a `null` detection (throttled frame) carries the previous verdict forward instead of failing |
 
-- **Hysteresis**: every continuous gate has a wider "stay passing" band than "start passing" band (`passMax`/`passMin` in the evaluator), so a value oscillating near the boundary doesn't flicker the outline color.
-- **Prompt selection**: the single highest-priority *failing* gate (iteration order `face → pitch/yaw → smile → card`) drives the on-screen prompt text and, for pitch/yaw, a directional arrow (`resolveAngleDirection`, reading the signed `offAxisVec`). Once shown, a prompt is locked for a minimum `800ms` (`minPromptDisplayMs`) even if the underlying failing gate changes mid-window, to avoid rapid text-swapping.
+- **Hysteresis**: every continuous gate has a wider "stay passing" band than "start passing" band (`passMax`/`passMin`/`passDistance` in the evaluator), so a value oscillating near the boundary doesn't flicker the outline color.
+- **Prompt selection**: the single highest-priority *failing* gate (iteration order `face → pitch/yaw → roll → distance → smile → card`) drives the on-screen prompt text and, for pitch/yaw, a directional arrow (`resolveAngleDirection`, reading the signed `offAxisVec`). Once shown, a prompt is locked for a minimum `800ms` (`minPromptDisplayMs`) even if the underlying failing gate changes mid-window, to avoid rapid text-swapping.
 - **Auto-capture trigger**: fires once *every currently-active* gate has held passing for `holdFramesRequired = 5` consecutive frames.
-- **Manual capture**: the shutter button works independently of gate state at any time a face is detected (button is disabled only when no face, mid-capture, mid-camera-switch, or session-full) — gating is guidance, not a lock.
+- **Capture trigger mode** (`src/main.ts`, not part of the evaluator itself): a runtime **Auto/Manual toggle** in the viewfinder, default Auto. In Auto, the shutter button is disabled outright and only the auto-trigger above can fire capture. In Manual, gates are guidance only — the button is enabled whenever a face is detected, regardless of gate state, as a deliberate bypass. (An earlier design had manual capture bypass gates unconditionally with no mode toggle at all; this two-mode split was chosen instead so gate-strictness is explicit and switchable rather than baked into one behavior.)
 - **`frameColor`**: `'green'` (all active gates passing), `'amber'` (some failing), `'none'` (no face).
 
-## 8. Capture sequence (`src/capture/captureSequence.ts`, timing in `CAPTURE_SEQUENCE`)
+## 8. Capture sequence — "Active Sweep" (`src/capture/captureSequence.ts`, timing in `CAPTURE_SEQUENCE`)
 
-Triggered by either the auto-trigger or the manual button, both funneling through `performCapture()` in `main.ts`, which flips a `capturing` flag (disabling re-entry and pausing the tracking loop, see §14) before calling `runCaptureSequence()`:
+Triggered by either the auto-trigger or the manual button, both funneling through `performCapture()` in `main.ts`, which flips a `capturing` flag (disabling re-entry and pausing the tracking loop, see §14) before calling `runCaptureSequence()`. The design inverted from an earlier version: previously the still image (scored from a 15-frame burst) was the primary color-measurement artifact and the video was purely supplementary; now the **video is primary** and the still is a single anchor frame, because the downstream color-calibration algorithm needs multiple reflection angles (from the video) to extract angular telemetry and remove glare offline, not a single glare-free still.
 
 1. Build the overlay text lines that will be burned into the saved image: `pitchDeg`/`yawDeg`/`rollDeg`/`mar`/`smileWidthRatio`, card status (if cardboard mode), ISO timestamp.
 2. Compute the normalized crop region: the padded mouth box, expanded to also include the card-guide region when cardboard mode is on (`cardGuideRegion.ts`, so a "with card" capture doesn't crop the card out).
 3. `tryLockCapture()` — attempt manual exposure/WB/focus lock.
 4. `sleep(sensorSettleMs = 500ms)` to let the lock settle.
-5. Start a **supplementary** `MediaRecorder` recording directly from the raw track — full-frame, not cropped, `.webm` (feature-detected mimeType). Best-effort; `null` on any failure or unsupported browser, and a recording failure never affects the still-image path.
-6. Burst-sample `burstFrameCount = 15` raw canvas frames over `burstDurationMs = 5000ms` (~333ms apart), each drawn straight from the live video element (never from the recorder's encoded output — the explicit reason MediaRecorder is never the source for the measurement image: lossy 4:2:0 encoding would shift color data). Each frame is scored (sharpness vs. clipping) and has the overlay text burned in at capture time.
-7. Stop the video recording.
-8. Sort the 15 frames by score, keep the best 3 (`keepBestCount`), take the top one as the default still.
-9. **Progressive enhancement** (Chrome/Android only): attempt `ImageCapture.takePhoto()` on the track for a full-sensor-resolution photo, fired only *after* the burst/scoring above has already picked its moment (adds no latency to that timing-sensitive loop). On success, this higher-res photo replaces the canvas frame as the saved still (cropped/overlay-burned via `cropAndOverlayBlob` to match the exact same region, so downstream consumers see consistent behavior regardless of source). Recorded as `stillSource: 'imageCapture' | 'canvas'`.
-10. Haptic pulse (`navigator.vibrate(60)`) + a short 880Hz tone (Web Audio) as a redundant, non-visual capture confirmation.
-11. `releaseLock()` — return exposure/WB/focus to continuous/auto.
-12. Return `{ imageUrl, blob, metadata }`; `main.ts` maps this into a `StoredCapture` and persists it (§10).
+5. Grab a **single** uncompressed canvas frame at this exact instant — before the sweep below begins — as the color anchor. No scoring or multi-frame comparison anymore; this is the strictly-gated starting frame, take it or leave it. `ImageCapture.takePhoto()` (the browser's native photo pipeline, Chrome/Android only) is **not used at all** — removed because it applies irreversible hardware tone mapping, judged worse for a color-calibration anchor than the resolution it would have gained.
+6. Start the supplementary `MediaRecorder` recording directly from the raw track — full-frame, not cropped, `.webm` (feature-detected mimeType), at a maximized target bitrate (`TARGET_VIDEO_BITRATE_BPS = 16,000,000`, an `ideal`-style hint the encoder clamps rather than errors on). This is now the **primary** color-calibration artifact, not supplementary in name only.
+7. `sleep(burstDurationMs = 5000ms)` — the user is prompted (`ACTIVE_SWEEP_PROMPT`, "Slowly move camera side-to-side") to sweep the camera during this window, deliberately the opposite of the old "hold still" burst design. No highlight clipping/rejection is applied to the video — every specular highlight is passed through unmodified, since the offline processor is expected to use them, not avoid them.
+8. Stop the video recording. Best-effort: `null` on any failure or unsupported browser, and a recording failure never affects the already-captured still.
+9. Haptic pulse (`navigator.vibrate(60)`) + a short 880Hz tone (Web Audio) as a redundant, non-visual capture confirmation.
+10. `releaseLock()` — return exposure/WB/focus to continuous/auto.
+11. Return `{ imageUrl, blob, metadata }`; `main.ts` maps this into a `StoredCapture` and persists it (§10). `stillSource` no longer exists as a field — there's only one still-image pipeline now.
 
 ## 9. Calibration-card subsystem ("Cardboard mode")
 
@@ -125,24 +126,25 @@ A top-left toggle switches the Smart Frame between two modes (§7 table). When o
 ## 10. Persistence (`src/storage/captureStore.ts`, IndexedDB)
 
 - DB `gavan-capture-store`, version 1, single object store `captures` keyed by `id`.
-- `StoredCapture` fields: the still-image `Blob`, all pose/smile metrics (`offAxisDeg`, `offAxisVec`, `rollDeg`, `pitchDeg`, `yawDeg`, `mar`, `smileWidthRatio`, mouth-box dimensions), `exposureLockSuccess`, `captureMode`, `capturedAt`, cardboard/card fields (`cardboardMode`, `cardMarkersDetected`, `cardAllMarkersVisible`, `cardIsFlat`), `lightDirection` (nullable), video fields (`videoBlob`/`videoMimeType`/`videoDurationMs`, all nullable), `stillSource`.
+- `StoredCapture` fields: the still-image `Blob` (single anchor frame, §8), all pose/smile metrics (`offAxisDeg`, `offAxisVec`, `rollDeg`, `pitchDeg`, `yawDeg`, `mar`, `smileWidthRatio`, mouth-box dimensions — `mouthBoxWidth` doubles as the distance-gate ratio), `exposureLockSuccess`, `captureMode`, `capturedAt`, cardboard/card fields (`cardboardMode`, `cardMarkersDetected`, `cardAllMarkersVisible`, `cardIsFlat`), `lightDirection` (nullable), video fields (`videoBlob`/`videoMimeType`/`videoDurationMs`, all nullable — now the primary artifact, §8).
 - No network calls anywhere in this module or its callers — everything is local. `clearCaptures()` wipes the entire store ("Clear all" in the gallery).
 - Session cap `MAX_SESSION_CAPTURES = 8` limits captures **per sitting** (button reads "Full" past that); there is no cap or quota check on total on-device storage across sessions (see §14).
 
 ## 11. Gallery (`src/ui/galleryScreen.ts`)
 
 - Grid of every capture ever saved (not just the current session), one thumbnail each, with a small video-camera badge icon overlay only when a clip was recorded (no raw-angle badge on thumbnails).
-- Lightbox (tap a thumbnail): full image, the video player (if present, shown **full-frame**, no crop simulation — a deliberate scope cut, see the "video crop" note in §14), a formatted date/time subtitle, Save-to-device (a `download` link to the blob) and Delete actions, and a collapsed `<details>` "Capture details" disclosure holding all raw metadata (pitch/yaw/roll, smile width, MAR, mouth-box %, exposure-lock state, capture mode, image source, and — cardboard captures only — marker/flatness status and light direction).
+- Lightbox (tap a thumbnail): full image, the video player (if present, shown **full-frame**, no crop simulation — a deliberate scope cut, see the "video crop" note in §14), a formatted date/time subtitle, Save-to-device (a `download` link to the blob) and Delete actions, and a collapsed `<details>` "Capture details" disclosure holding all raw metadata (pitch/yaw/roll, smile width, MAR, mouth-box %, exposure-lock state, capture mode, and — cardboard captures only — marker/flatness status and light direction). The "Image source" row (canvas vs. ImageCapture) that used to appear here was removed along with `ImageCapture` itself (§8) — there's only one still-image pipeline now.
 
 ## 12. Viewfinder UI (`src/ui/viewfinderScreen.ts`, `src/ui/overlay.ts`, `src/style.css`)
 
 - Live `<video>` (mirrored when front-facing, per `MIRRORED` in config) with a `<canvas>` overlay drawing the color-coded mouth-box outline + directional arrow, plus a dashed card-guide region when cardboard mode is on.
 - **Prompt banner**: a small pill at top-center, the single highest-priority guidance text (§7), green border when passing, amber otherwise, hidden entirely when there's nothing to say.
 - **Live numeric readout**: `pitchDeg`/`yawDeg`/`rollDeg`/`mar`/`smileWidthRatio`/hold-count text, with an "OPTIMAL" label when the frame is green.
-- **Shutter button**: circular; disabled with no face detected, mid-capture, mid-camera-switch, or session-full. During an active capture it turns **red with a live countdown printed on the button itself** (`startCaptureCountdown` in `main.ts`), then briefly flashes green with "Saved" before resetting. This replaced an earlier full-screen dimming overlay that (per real-device report) hid the user's own face for the entire ~5.5s capture window — the current design was chosen specifically so nothing ever covers the live preview.
-- Top-left cluster: Switch camera, Flash/torch (hidden unless the active camera reports support), Cardboard toggle (resets in-progress hold-to-capture state on toggle, since the active gate set changes).
+- **Shutter button**: circular; in Auto mode (default) always disabled — capture only fires via the gate-hold auto-trigger. In Manual mode, disabled only with no face detected, mid-capture, mid-camera-switch, or session-full. During an active capture it turns **red with a live countdown printed on the button itself** (`startCaptureCountdown` in `main.ts`), showing the static prompt "Slowly move camera side-to-side" in the prompt banner for the window's duration, then briefly flashes green with "Saved" before resetting. The red-countdown-on-button design replaced an earlier full-screen dimming overlay that (per real-device report) hid the user's own face for the entire ~5.5s capture window.
+- Top-left cluster: Switch camera, Flash/torch (hidden unless the active camera reports support), Cardboard toggle, **Manual** toggle (Auto/Manual capture trigger mode, §7), **Debug** button (reveals a small panel with two range sliders that adjust the distance gate's `[min, max]` live, seeded from `DISTANCE_GATE_DEFAULTS`, hidden by default — a POC tuning aid, not intended as a shipped end-user control). Cardboard toggling resets in-progress hold-to-capture state, since the active gate set changes.
 - Top-right: Gallery button, always visible/enabled regardless of session state.
 - Session badge ("Saved n/8") appears once at least one capture has been made this session.
+- With five controls now in `.top-bar-left` (Switch, Flash, Cardboard, Manual, Debug), the cluster wraps (`flex-wrap: wrap`) rather than overflowing on narrow screens — unverified on a real small-screen device, same caveat as everything else UI-related in this project.
 
 ## 13. PWA / offline infrastructure
 
@@ -158,24 +160,28 @@ Grouped by theme — this is the primary input for an audit against the goal in 
 - Calibration card layout (`CARD_CONFIG`) is entirely placeholder — no real printed card exists yet to detect against.
 - Light-direction estimation is a coarse 2D "brightest pixel offset" heuristic, explicitly not a solved photometric estimate.
 - `smileWidth` gate threshold (0.55/0.45) is anchored to exactly **one** real data point (one person's intentionally maximal smile scoring 0.71) — not a calibration set across face shapes, ages, or smile styles.
-- Whether `tryLockCapture()`'s manual exposure/WB lock survives into `ImageCapture.takePhoto()`, or is silently overridden by the platform's photo pipeline, is untested and device-dependent.
-- Roll (sideways head tilt) is tracked and shown but **not gated** in the Smart Frame — the spec text only calls out pitch/yaw, but a predecessor 7-gate system did gate roll for the same "distorts measurement" reason. Unclear if the drop was intentional; flagged, not resolved.
+- **New**: `distance` gate threshold (`DISTANCE_GATE_DEFAULTS`, 0.15/0.25, approximating 15-25cm) is an **unverified starting estimate**, the same shape of guess that took two wrong tries before `smileWidth` was corrected with real data. Mitigated by being runtime-adjustable (the Debug panel, §12) rather than requiring a redeploy to retune, but it ships uncalibrated by design.
+- **Resolved**: the exposure-lock-vs-`ImageCapture` question is now moot — `ImageCapture` has been removed entirely (§8), specifically because its irreversible hardware tone mapping was judged a worse tradeoff for a color-calibration anchor than the resolution it offered.
+- **Resolved**: roll is now gated (§7), reusing the deleted 7-gate system's threshold unchanged. Distance is a new gate alongside it. Both were added specifically to "lock the starting geometry strictly" before the Active Sweep window begins.
+- **New, and the single largest behavioral risk of this round of changes**: the still-image anchor now has **no fallback frame**. The prior design scored 15 canvas frames and kept the best (sharpest, least clipped); the current design grabs exactly one frame at the instant the capture window starts. A blink, motion blur, or a stray highlight at that exact instant has no recovery path within a single capture — this is an accepted tradeoff (the video is now the real data), not an oversight, but it does mean the still anchor's reliability bar is lower than before.
+- **New**: whether the actual downstream color-calibration/glare-removal system's input expectations (bitrate, container format, frame rate, expected sweep speed/pattern) match what this app now produces is an **unverified assumption** — `TARGET_VIDEO_BITRATE_BPS = 16,000,000` and the "Slowly move camera side-to-side" prompt wording are both reasonable guesses, not confirmed against that system's actual requirements, which live outside this repo entirely.
 
 **Reliability / performance:**
-- One reported on-device crash right at the end of the 5-second capture window was addressed by pausing the live tracking loop during capture (a resource-contention hypothesis — MediaRecorder + burst + possible ImageCapture + GPU-delegated tracker all running concurrently) — **root cause unconfirmed**, no crash log or stack trace was ever obtained.
+- One reported on-device crash right at the end of the 5-second capture window was addressed by pausing the live tracking loop during capture (a resource-contention hypothesis — MediaRecorder + burst + possible ImageCapture + GPU-delegated tracker all running concurrently) — **root cause unconfirmed**, no crash log or stack trace was ever obtained. The fix (pausing tracking during capture) is unchanged by this round and still applies to the Active Sweep window.
 - No Web Worker: the face tracker and gate evaluator both run on the main thread every frame.
-- Video storage growth is unmanaged — no `navigator.storage.estimate()` / quota handling — despite full-frame 5-second clips being materially larger than the cropped-mouth still image, at up to 8 captures/session.
-- Concurrent video-recording + canvas-burst performance on lower-end phones is unverified; the one confirmed real issue found this way (recording frame-rate collapsing when resolution constraints omitted a frame-rate hint) is fixed, but not re-verified since.
+- Video storage growth is unmanaged — no `navigator.storage.estimate()` / quota handling — and **just got worse**: maximizing the recording bitrate (§8) makes each 5-second full-frame clip larger than before, on purpose, at up to 8 captures/session.
+- Video-recording performance on lower-end phones at the new higher bitrate is unverified — more so than before, since a higher bitrate is a heavier ask of the encoder. The concurrent-canvas-burst contention concern from the prior round is now moot (there's no more canvas burst, §8), but recorder-alone performance at this bitrate hasn't been checked either.
 
 **Verification coverage:**
 - No real device has ever been available inside the dev/CI environment (see the note at the top of this document) — every real-device-only fact here came from the human tester, second-hand.
 - ArUco detection accuracy against a real card, and the with-cardboard gate path generally, is exercised only by "does the toggle crash the loop" smoke testing, not detection accuracy.
-- `ImageCapture` quality gain over the canvas fallback is unverified on real Android hardware.
-- The capture-button countdown is a local timer approximating `CAPTURE_SEQUENCE`'s configured durations, not synchronized to the actual burst loop — can drift under real per-frame processing overhead.
-- Recent UI changes (gallery redesign, capture-button/prompt-banner feedback) are only smoke-tested for "doesn't crash," not evaluated for real-device look/feel (contrast in bright light, touch targets, etc).
+- The capture-button countdown is a local timer approximating `CAPTURE_SEQUENCE`'s configured durations, not synchronized to the actual recording — can drift under real per-frame processing overhead.
+- The new Manual/Auto toggle and Debug distance-range panel are only smoke-tested for "doesn't crash," not evaluated for real-device look/feel or whether the now-five-control `.top-bar-left` cluster wraps sensibly on a small screen.
+- **Neither the without-cardboard nor the with-cardboard capture path has been re-verified against the new roll/distance gates or the Active Sweep flow on a real device** — the last real-device confirmation predates this round of changes entirely.
 
 **Code health:**
-- The pre-Smart-Frame 7-gate system (`gateEvaluator.ts`, `captureController.ts`, `gates/types.ts`) is fully unwired dead code that still compiles and carries its own unit tests — a maintenance cost with no current runtime value.
+- **Resolved**: the pre-Smart-Frame 7-gate system (`gateEvaluator.ts`, `captureController.ts`, `gates/types.ts`, `exposureSample.ts`) has been deleted outright, not just left unwired. `ArrowDirection` (which that system's `types.ts` used to own) now lives in `smartFrameTypes.ts`.
+- **Resolved**: `ImageCapture` (`capture/imageCapture.ts`), the `stillSource` field it introduced, and `frameScore.ts`'s `cropAndOverlayBlob` (only ever used by the ImageCapture path) have all been removed as a consequence of bypassing `ImageCapture` entirely (§8).
 - Video is deliberately shown/stored full-frame with no crop-to-match-the-still-image treatment (a feature that was scoped out on cost/value grounds, not an oversight — documented for context, not flagged as a gap).
 
 ## 15. Open product decision
@@ -186,12 +192,12 @@ Grouped by theme — this is the primary input for an audit against the goal in 
 
 ### Suggested framing for an auditing agent
 
-Given the goal in §1 (repeatable, color-usable, calibratable, private, cross-platform smile captures), the highest-leverage audit questions are likely:
+Given the goal in §1 (repeatable, color-usable, calibratable, private, cross-platform smile captures) and the video-first pivot described in §§7-8, the highest-leverage audit questions are likely:
 
-1. Does the **gate set** (pitch/yaw/smile, no roll) actually correlate with what makes a photo usable for shade comparison, or should roll (or something else) be added back?
-2. Is the **smile-width threshold** — single-data-point calibration — a real risk of false negatives/positives across the patient population this will actually see?
-3. Does the **exposure-lock path** reliably survive into whichever still-image pipeline wins (canvas vs. ImageCapture), given it's explicitly untested?
-4. Is **storage growth** (uncapped across sessions, video included) a real problem at expected usage volumes, and if so what's the cheapest fix (drop video? cap total on-device size? compress?)
+1. Is the **single-frame still anchor** (no scoring/fallback, §8) an acceptable reliability tradeoff for how the downstream system actually uses it, or does losing the best-of-15 selection risk enough blurry/blinking anchors to matter?
+2. Does the **actual offline post-processor** want what this app now produces — bitrate, container format, sweep speed/pattern — or are `TARGET_VIDEO_BITRATE_BPS` and the sweep prompt's wording guesses that need to be confirmed against that system's real contract?
+3. Are the **`smileWidth` and `distance` thresholds** — both single-data-point-or-worse calibrations — a real risk of false negatives/positives across the patient population this will actually see, and is the runtime-adjustable Debug panel a sufficient mitigation or just a deferred problem?
+4. Is **storage growth** (uncapped across sessions, video now recorded at a higher bitrate than before) a real problem at expected usage volumes, and if so what's the cheapest fix (cap total on-device size? lower the bitrate target? compress?)
 5. Given the crash was "fixed" by hypothesis rather than diagnosis, is there a way to get real crash telemetry (e.g. a lightweight error-reporting hook) before this ships, rather than continuing to patch blind?
 6. Is the calibration-card/light-estimation subsystem worth hardening now, or genuinely blocked on a real card design (in which case, is there lower-risk work to prioritize instead)?
-7. Should the dead 7-gate system be deleted outright, or is there a reason it's being kept?
+7. Does the **Auto/Manual capture-trigger toggle** (§7) make sense as a shipped feature, or should it be a dev-only affordance like the Debug panel — right now both live in the same always-visible top-left cluster with no visual distinction between "core interaction" and "POC tuning tool."

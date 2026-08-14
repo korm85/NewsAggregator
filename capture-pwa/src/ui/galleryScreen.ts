@@ -103,7 +103,6 @@ function openLightbox(
           <div><span>Mouth box</span><span>${(capture.mouthBoxWidth * 100).toFixed(0)}% x ${(capture.mouthBoxHeight * 100).toFixed(0)}%</span></div>
           <div><span>Exposure lock</span><span>${capture.exposureLockSuccess ? 'Locked' : 'Auto'}</span></div>
           <div><span>Capture mode</span><span>${capture.captureMode}</span></div>
-          <div><span>Image source</span><span>${capture.stillSource === 'imageCapture' ? 'High-res photo' : 'Video frame'}</span></div>
           ${
             capture.cardboardMode
               ? `<div><span>Card</span><span>${capture.cardAllMarkersVisible ? 'All markers' : `${capture.cardMarkersDetected.length} marker(s)`}, ${capture.cardIsFlat ? 'flat' : 'tilted'}</span></div>

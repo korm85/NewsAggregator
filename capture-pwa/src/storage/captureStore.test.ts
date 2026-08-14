@@ -26,7 +26,6 @@ function makeCapture(overrides: Partial<StoredCapture> = {}): StoredCapture {
     videoBlob: null,
     videoMimeType: null,
     videoDurationMs: null,
-    stillSource: 'canvas',
     ...overrides,
   };
 }

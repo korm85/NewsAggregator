@@ -19,7 +19,7 @@ import {
 import { saveCapture, type StoredCapture } from './storage/captureStore';
 import { evaluateSmartFrame } from './gates/smartFrameEvaluator';
 import { createInitialSmartFrameState, type SmartFrameGateState } from './gates/smartFrameTypes';
-import { CAPTURE_MODE, CAPTURE_SEQUENCE, MAX_SESSION_CAPTURES } from './config';
+import { CAPTURE_MODE, CAPTURE_SEQUENCE, DISTANCE_GATE_DEFAULTS, MAX_SESSION_CAPTURES } from './config';
 
 const root = document.getElementById('app')!;
 
@@ -67,12 +67,15 @@ function makeCaptureId(): string {
 }
 
 /**
- * Smart Frame release: the color-coded outline + prompt banner drive
- * both automatic capture (fires once the gate evaluator has held all
- * active gates passing for THRESHOLDS.holdFramesRequired frames) and a
- * manual shutter button that works any time a face is detected,
- * independent of gate state, per "add auto or manual capture, auto will
- * record when conditions are met".
+ * Two capture trigger modes, switched at runtime via the viewfinder's
+ * Manual toggle (default: auto). In 'auto', the shutter button is
+ * inert and capture only fires once the gate evaluator has held every
+ * active gate (pitch/yaw/roll/distance/smile, +card in cardboard mode)
+ * passing for THRESHOLDS.holdFramesRequired frames -- this is the
+ * strict "lock the starting geometry" path. In 'manual', gates are
+ * guidance only: the shutter button works any time a face is detected,
+ * regardless of gate state, as a deliberate bypass for a tester who
+ * wants a sample despite an imperfect pose.
  */
 function startViewfinder(): void {
   if (!stream || !tracker) return;
@@ -83,6 +86,8 @@ function startViewfinder(): void {
   let switchingCamera = false;
   let torchOn = false;
   let cardboardMode = false;
+  let triggerMode: 'auto' | 'manual' = 'auto';
+  let distanceRange: { min: number; max: number } = DISTANCE_GATE_DEFAULTS;
   let latestSnapshot: TrackerSnapshot | null = null;
   let latestCard: CardDetectionResult | null = null;
   let latestLight: LightEstimate | null = null;
@@ -94,7 +99,7 @@ function startViewfinder(): void {
     void renderGalleryScreen(root, startViewfinder);
   };
 
-  const refs = renderViewfinderScreen(root, currentFacingMode === 'front', {
+  const refs = renderViewfinderScreen(root, currentFacingMode === 'front', DISTANCE_GATE_DEFAULTS, {
     onOpenGallery: goToGallery,
     onCapture: () => performCapture(),
     onSwitchCamera: onSwitchCameraTapped,
@@ -105,6 +110,12 @@ function startViewfinder(): void {
       latestLight = null;
       lastCardCheckMs = -Infinity;
       smartFrameState = createInitialSmartFrameState();
+    },
+    onToggleCaptureMode: (manual) => {
+      triggerMode = manual ? 'manual' : 'auto';
+    },
+    onDistanceRangeChange: (range) => {
+      distanceRange = range;
     },
   });
   refs.video.srcObject = stream;
@@ -179,7 +190,6 @@ function startViewfinder(): void {
           videoBlob: result.metadata.video?.blob ?? null,
           videoMimeType: result.metadata.video?.mimeType ?? null,
           videoDurationMs: result.metadata.video?.durationMs ?? null,
-          stillSource: result.metadata.stillSource,
         };
         URL.revokeObjectURL(result.imageUrl);
         return saveCapture(stored);
@@ -289,7 +299,13 @@ function startViewfinder(): void {
     }
 
     const evaluation = evaluateSmartFrame(
-      { tracker: trackerResult, card: cardboardMode ? latestCard : null, cardboardMode, nowMs: now },
+      {
+        tracker: trackerResult,
+        card: cardboardMode ? latestCard : null,
+        cardboardMode,
+        nowMs: now,
+        distanceRange,
+      },
       smartFrameState,
     );
     smartFrameState = evaluation.state;
@@ -317,12 +333,16 @@ function startViewfinder(): void {
     updateReadout(refs, trackerResult, evaluation);
 
     // Don't fight the "capturing"/"switching"/"full" disabled states the
-    // click handlers set while something's already in flight.
+    // click handlers set while something's already in flight. In auto
+    // mode the button is inert (auto-trigger is the only path); in
+    // manual mode it's the guidance-only bypass, enabled by face
+    // presence alone regardless of gate state.
     if (!capturing && !switchingCamera && sessionCaptureCount < MAX_SESSION_CAPTURES) {
-      refs.captureButton.disabled = !trackerResult.detected;
+      refs.captureButton.disabled = triggerMode === 'auto' ? true : !trackerResult.detected;
     }
 
     if (
+      triggerMode === 'auto' &&
       evaluation.captureTriggered &&
       !capturing &&
       !switchingCamera &&
@@ -338,22 +358,17 @@ function startViewfinder(): void {
 }
 
 /**
- * Guidance phrases shown across the capture window, keyed by elapsed
- * fraction (0-1) of sensorSettleMs + burstDurationMs. Deliberately
- * small movements ("slowly tilt", not "turn your head") since the
- * still image is still picked from whichever burst frame scores best
- * on sharpness/clipping -- a wide swing would just make more of the
- * burst miss the pose gate the trigger already required. The point is
- * catching a few different specular-highlight angles during the
- * window ("manage reflections", per the product spec), not re-posing.
+ * The single guidance message shown for the entire "Active Sweep"
+ * capture window: unlike the still image (a single anchor frame grabbed
+ * at the very start, see captureSequence.ts), the video recording that
+ * follows deliberately wants the user moving, not holding still -- the
+ * offline post-processor extracts angular telemetry and removes glare
+ * from the multiple reflection angles a real sweep produces. A prior
+ * version rotated through several small-movement prompts timed to a
+ * static burst schedule; that no longer matches this window's actual
+ * purpose, so it's one constant instruction instead.
  */
-const CAPTURE_GUIDANCE_STEPS: { until: number; text: string }[] = [
-  { until: 0.12, text: 'Hold still, locking focus...' },
-  { until: 0.4, text: 'Keep smiling, slowly tilt left' },
-  { until: 0.62, text: 'Now center' },
-  { until: 0.88, text: 'Slowly tilt right' },
-  { until: 1.0, text: 'Hold center, almost done' },
-];
+const ACTIVE_SWEEP_PROMPT = 'Slowly move camera side-to-side';
 
 /**
  * Full-window capture feedback, without ever covering the live preview:
@@ -375,17 +390,13 @@ function startCaptureCountdown(refs: ViewfinderRefs, totalMs: number): () => voi
   refs.captureButton.classList.add('recording');
   refs.captureButton.disabled = true;
   refs.promptBanner.classList.remove('none', 'green');
+  refs.promptBanner.textContent = ACTIVE_SWEEP_PROMPT;
 
   const startedAt = performance.now();
   function tick(): void {
     const elapsed = performance.now() - startedAt;
-    const fraction = Math.min(1, elapsed / totalMs);
     const remainingS = Math.max(0, (totalMs - elapsed) / 1000);
     refs.captureButton.textContent = remainingS.toFixed(1);
-    const step =
-      CAPTURE_GUIDANCE_STEPS.find((s) => fraction <= s.until) ??
-      CAPTURE_GUIDANCE_STEPS[CAPTURE_GUIDANCE_STEPS.length - 1];
-    refs.promptBanner.textContent = step.text;
   }
   tick();
   const intervalId = window.setInterval(tick, 100);

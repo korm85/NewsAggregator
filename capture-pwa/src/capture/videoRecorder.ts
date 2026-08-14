@@ -1,13 +1,19 @@
+import { TARGET_VIDEO_BITRATE_BPS } from '../config';
+
 /**
- * Records a real video clip alongside the raw-frame still-image burst,
- * per the Smart Frame spec's "automatic initiation of video recording
- * ... a five-second video to manage reflections". Purely supplementary:
- * the still image (captureSequence.ts, scored raw canvas frames) stays
- * the source of truth for color/shade measurement, never this. Encoded
- * video is lossy (handoff Section 2 decision 3's original reasoning for
- * why measurement frames are never sourced from encoded video still
- * applies), so this exists for reflection/lighting-context review, not
- * calibration.
+ * Records a real video clip across the Active Sweep window, per the
+ * Smart Frame spec's "automatic initiation of video recording ... a
+ * five-second video to manage reflections". This is now the PRIMARY
+ * color-calibration artifact (see captureSequence.ts): the offline
+ * post-processor extracts angular telemetry and removes glare from the
+ * multiple reflection angles the sweep captures, more accurately than
+ * the live browser tracker could. The still image is a single
+ * uncompressed anchor frame, not a competing source of truth. Recorded
+ * at as high a bitrate as `MediaRecorder` will take (`videoBitsPerSecond`,
+ * see config.ts) to minimize compression artifacts in the specular-
+ * highlight detail the glare-removal step depends on; no clipping or
+ * glare rejection is applied client-side, every highlight is passed
+ * through unmodified.
  *
  * Records the raw camera track directly (full frame, not cropped to
  * the mouth like the still image): cropping would mean continuously
@@ -15,8 +21,8 @@
  * MediaRecorder, a real per-frame cost stacked on top of the tracker
  * and gate evaluator already running every frame. Recording the track
  * directly has none of that, the browser's own camera pipeline feeds
- * the encoder. The gallery visually crops the full-frame video via CSS
- * to look consistent with the still image (src/ui/galleryScreen.ts).
+ * the encoder. The gallery shows the full-frame video as-is
+ * (src/ui/galleryScreen.ts), no crop simulation.
  */
 const CANDIDATE_MIME_TYPES = [
   'video/webm;codecs=vp9',
@@ -56,7 +62,10 @@ export function startVideoRecording(track: MediaStreamTrack): VideoRecording | n
 
   try {
     const stream = new MediaStream([track]);
-    const recorder = new MediaRecorder(stream, { mimeType });
+    const recorder = new MediaRecorder(stream, {
+      mimeType,
+      videoBitsPerSecond: TARGET_VIDEO_BITRATE_BPS,
+    });
     const chunks: Blob[] = [];
     const startedAt = performance.now();
 

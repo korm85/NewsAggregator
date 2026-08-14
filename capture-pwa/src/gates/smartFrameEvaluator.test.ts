@@ -7,7 +7,10 @@ import { createInitialSmartFrameState, type SmartFrameGateState } from './smartF
 function makeTracker(overrides: Partial<TrackerResult> = {}): TrackerResult {
   return {
     detected: true,
-    mouthBox: { x: 0.325, y: 0.425, w: 0.35, h: 0.15 },
+    // w: 0.2 sits mid-range in DISTANCE_GATE_DEFAULTS (0.15-0.25), so
+    // the default fixture passes the distance gate too, same as it
+    // already comfortably passes pitch/yaw/roll/smile.
+    mouthBox: { x: 0.4, y: 0.425, w: 0.2, h: 0.15 },
     offAxisDeg: 0,
     offAxisVec: { x: 0, y: 0 },
     rollDeg: 0,
@@ -73,6 +76,97 @@ describe('evaluateSmartFrame: pitch/yaw hysteresis', () => {
     expect(evaluation.gateStatuses.pitch).toBe(true);
     ({ evaluation, state, now } = run(state, makeTracker({ pitchDeg: 18.5 }), 1, now));
     expect(evaluation.gateStatuses.pitch).toBe(false);
+  });
+});
+
+describe('evaluateSmartFrame: roll hysteresis', () => {
+  it('passes at 5 degrees, fails at 6, both signs', () => {
+    const { evaluation: ok } = run(createInitialSmartFrameState(), makeTracker({ rollDeg: 5 }), 1, 0);
+    expect(ok.gateStatuses.roll).toBe(true);
+
+    const { evaluation: bad } = run(createInitialSmartFrameState(), makeTracker({ rollDeg: -6.5 }), 1, 0);
+    expect(bad.gateStatuses.roll).toBe(false);
+  });
+
+  it('does not flicker once passing (hysteresis band)', () => {
+    let { state, now } = run(createInitialSmartFrameState(), makeTracker({ rollDeg: 2 }), 1, 0);
+    let evaluation;
+    ({ evaluation, state, now } = run(state, makeTracker({ rollDeg: 5.5 }), 1, now));
+    expect(evaluation.gateStatuses.roll).toBe(true);
+    ({ evaluation, state, now } = run(state, makeTracker({ rollDeg: 6.5 }), 1, now));
+    expect(evaluation.gateStatuses.roll).toBe(false);
+  });
+});
+
+describe('evaluateSmartFrame: distance gate', () => {
+  it('passes within the default 0.15-0.25 range, fails outside it', () => {
+    const { evaluation: ok } = run(
+      createInitialSmartFrameState(),
+      makeTracker({ mouthBox: { x: 0.4, y: 0.425, w: 0.2, h: 0.15 } }),
+      1,
+      0,
+    );
+    expect(ok.gateStatuses.distance).toBe(true);
+
+    const { evaluation: tooClose } = run(
+      createInitialSmartFrameState(),
+      makeTracker({ mouthBox: { x: 0.35, y: 0.4, w: 0.35, h: 0.2 } }),
+      1,
+      0,
+    );
+    expect(tooClose.gateStatuses.distance).toBe(false);
+    expect(tooClose.prompt).toBe('Move back');
+
+    const { evaluation: tooFar } = run(
+      createInitialSmartFrameState(),
+      makeTracker({ mouthBox: { x: 0.45, y: 0.45, w: 0.08, h: 0.08 } }),
+      1,
+      0,
+    );
+    expect(tooFar.gateStatuses.distance).toBe(false);
+    expect(tooFar.prompt).toBe('Move closer');
+  });
+
+  it('honors a runtime-adjustable distanceRange over the default', () => {
+    // 0.2 fails a narrowed 0.28-0.35 range even though it passes the
+    // default 0.15-0.25 range used everywhere else in this file.
+    const evaluation = evaluateSmartFrame(
+      {
+        tracker: makeTracker(),
+        card: null,
+        cardboardMode: false,
+        nowMs: 0,
+        distanceRange: { min: 0.28, max: 0.35 },
+      },
+      createInitialSmartFrameState(),
+    );
+    expect(evaluation.gateStatuses.distance).toBe(false);
+    expect(evaluation.allPassed).toBe(false);
+  });
+
+  it('does not flicker once passing (hysteresis buffer)', () => {
+    let { state, now } = run(
+      createInitialSmartFrameState(),
+      makeTracker({ mouthBox: { x: 0.4, y: 0.425, w: 0.2, h: 0.15 } }),
+      1,
+      0,
+    );
+    // Just above max (0.25) but inside the hysteresis buffer (0.02).
+    let evaluation;
+    ({ evaluation, state, now } = run(
+      state,
+      makeTracker({ mouthBox: { x: 0.38, y: 0.42, w: 0.26, h: 0.16 } }),
+      1,
+      now,
+    ));
+    expect(evaluation.gateStatuses.distance).toBe(true);
+    ({ evaluation, state, now } = run(
+      state,
+      makeTracker({ mouthBox: { x: 0.37, y: 0.41, w: 0.28, h: 0.17 } }),
+      1,
+      now,
+    ));
+    expect(evaluation.gateStatuses.distance).toBe(false);
   });
 });
 

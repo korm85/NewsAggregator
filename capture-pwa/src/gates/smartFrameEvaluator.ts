@@ -1,14 +1,14 @@
-import { THRESHOLDS, type MaxGateConfig, type MinGateConfig } from '../config';
+import { DISTANCE_GATE_DEFAULTS, DISTANCE_GATE_HYSTERESIS, THRESHOLDS, type MaxGateConfig, type MinGateConfig } from '../config';
 import { resolveAngleDirection } from './directionPrompt';
 import {
   activeGateIds,
+  type ArrowDirection,
   type SmartFrameEvaluation,
   type SmartFrameGateId,
   type SmartFrameGateState,
   type SmartFrameInputs,
   type SmartFramePassingState,
 } from './smartFrameTypes';
-import type { ArrowDirection } from './types';
 
 function passMax(value: number, wasPassing: boolean, cfg: MaxGateConfig): boolean {
   return wasPassing ? value <= cfg.exitMax : value <= cfg.enterMax;
@@ -19,19 +19,29 @@ function passMin(value: number, wasPassing: boolean, cfg: MinGateConfig): boolea
 }
 
 /**
- * Pure function, same shape/contract as gates/gateEvaluator.ts (no DOM
- * access, deterministic given the same inputs + prevState). Kept as a
- * separate module rather than folded into the older evaluator because
- * the Smart Frame spec's gate set (pitch/yaw split, MAR, card) and its
- * "with/without cardboard" toggle don't map onto the older 7-gate
- * distance/centering/stability/exposure design, and main.ts no longer
- * drives that older evaluator.
+ * The distance gate's [min, max] range is runtime-adjustable (see
+ * SmartFrameInputs.distanceRange), so unlike the other gates it can't
+ * carry separate enter/exit bands baked into config -- instead a fixed
+ * buffer (DISTANCE_GATE_HYSTERESIS) is added outside whichever range is
+ * active once passing, so the gate still doesn't flicker at the edges.
+ */
+function passDistance(value: number, wasPassing: boolean, range: { min: number; max: number }): boolean {
+  const buffer = wasPassing ? DISTANCE_GATE_HYSTERESIS : 0;
+  return value >= range.min - buffer && value <= range.max + buffer;
+}
+
+/**
+ * Pure function: no DOM access, deterministic given the same inputs +
+ * prevState. The only gate evaluator left in the codebase -- the
+ * original 7-gate distance/centering/stability/exposure system this
+ * once coexisted with has been deleted, not just superseded.
  */
 export function evaluateSmartFrame(
   input: SmartFrameInputs,
   prevState: SmartFrameGateState,
 ): SmartFrameEvaluation {
   const { tracker, card, cardboardMode, nowMs } = input;
+  const distanceRange = input.distanceRange ?? DISTANCE_GATE_DEFAULTS;
   const prevPassing = prevState.passing;
   const passing: SmartFramePassingState = { ...prevPassing };
 
@@ -40,10 +50,18 @@ export function evaluateSmartFrame(
   if (!tracker.detected) {
     passing.pitch = false;
     passing.yaw = false;
+    passing.roll = false;
+    passing.distance = false;
     passing.smile = false;
   } else {
     passing.pitch = passMax(Math.abs(tracker.pitchDeg), prevPassing.pitch, THRESHOLDS.pitch);
     passing.yaw = passMax(Math.abs(tracker.yawDeg), prevPassing.yaw, THRESHOLDS.yaw);
+    passing.roll = passMax(Math.abs(tracker.rollDeg), prevPassing.roll, THRESHOLDS.roll);
+    // Box width is already a fraction of frame width -- landmarks are
+    // normalized 0-1 -- so no extra division is needed here.
+    passing.distance = tracker.mouthBox
+      ? passDistance(tracker.mouthBox.w, prevPassing.distance, distanceRange)
+      : false;
     // Two metrics, one gate: MAR is just a mouth-not-closed floor,
     // smileWidthRatio is the actual "smiling wide" signal (see
     // TrackerResult and THRESHOLDS.smileWidth for why). Both need to
@@ -70,7 +88,7 @@ export function evaluateSmartFrame(
   const allPassed = gateOrder.every((g) => passing[g]);
   const failingGate = gateOrder.find((g) => !passing[g]) ?? null;
 
-  const candidate = buildPrompt(failingGate, tracker.offAxisVec, card);
+  const candidate = buildPrompt(failingGate, tracker.offAxisVec, card, tracker.mouthBox?.w ?? null, distanceRange);
   const promptChanged = candidate.text !== prevState.currentPrompt;
 
   const isLocked =
@@ -123,6 +141,8 @@ function buildPrompt(
   failingGate: SmartFrameGateId | null,
   offAxisVec: { x: number; y: number },
   card: { allMarkersVisible: boolean; isFlat: boolean } | null,
+  distanceRatio: number | null,
+  distanceRange: { min: number; max: number },
 ): { text: string | null; direction: ArrowDirection } {
   if (!failingGate) return { text: null, direction: null };
 
@@ -133,6 +153,14 @@ function buildPrompt(
     case 'yaw': {
       const { direction, text } = resolveAngleDirection(offAxisVec);
       return { text, direction };
+    }
+    case 'roll':
+      return { text: 'Straighten your head', direction: null };
+    case 'distance': {
+      const tooClose = distanceRatio !== null && distanceRatio > distanceRange.max;
+      return tooClose
+        ? { text: 'Move back', direction: null }
+        : { text: 'Move closer', direction: null };
     }
     case 'smile':
       return { text: 'Ask the patient to smile wide', direction: null };
