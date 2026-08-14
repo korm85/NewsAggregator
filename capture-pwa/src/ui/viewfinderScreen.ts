@@ -4,12 +4,6 @@ export interface ViewfinderRefs {
   liveReadout: HTMLDivElement;
   promptBanner: HTMLDivElement;
   sessionBadge: HTMLDivElement;
-  capturingOverlay: HTMLDivElement;
-  capturingProgressState: HTMLDivElement;
-  capturingTimer: HTMLDivElement;
-  capturingProgressFill: HTMLDivElement;
-  capturingGuidance: HTMLDivElement;
-  capturingSuccessState: HTMLDivElement;
   galleryButton: HTMLButtonElement;
   captureButton: HTMLButtonElement;
   switchCameraButton: HTMLButtonElement;
@@ -54,17 +48,6 @@ export function renderViewfinderScreen(
       <div class="prompt-banner none" id="prompt-banner"></div>
       <div class="live-readout" id="live-readout">Loading tracker...</div>
       <button class="shutter-btn" id="capture-btn">Capture</button>
-      <div class="capturing-overlay hidden" id="capturing-overlay">
-        <div class="capturing-progress-state" id="capturing-progress-state">
-          <div class="capturing-timer" id="capturing-timer">5.5s</div>
-          <div class="capturing-progress"><div class="capturing-progress-fill" id="capturing-progress-fill"></div></div>
-          <div class="capturing-guidance" id="capturing-guidance">Hold still, locking focus...</div>
-        </div>
-        <div class="capturing-success-state hidden" id="capturing-success-state">
-          <div class="capturing-check">&check;</div>
-          <div class="capturing-success-text">Captured</div>
-        </div>
-      </div>
     </div>
   `;
 
@@ -85,12 +68,6 @@ export function renderViewfinderScreen(
     liveReadout: root.querySelector<HTMLDivElement>('#live-readout')!,
     promptBanner: root.querySelector<HTMLDivElement>('#prompt-banner')!,
     sessionBadge: root.querySelector<HTMLDivElement>('#session-badge')!,
-    capturingOverlay: root.querySelector<HTMLDivElement>('#capturing-overlay')!,
-    capturingProgressState: root.querySelector<HTMLDivElement>('#capturing-progress-state')!,
-    capturingTimer: root.querySelector<HTMLDivElement>('#capturing-timer')!,
-    capturingProgressFill: root.querySelector<HTMLDivElement>('#capturing-progress-fill')!,
-    capturingGuidance: root.querySelector<HTMLDivElement>('#capturing-guidance')!,
-    capturingSuccessState: root.querySelector<HTMLDivElement>('#capturing-success-state')!,
     galleryButton,
     captureButton,
     switchCameraButton,

@@ -135,12 +135,14 @@ function startViewfinder(): void {
   function performCapture(): void {
     if (capturing || switchingCamera || !latestSnapshot || sessionCaptureCount >= MAX_SESSION_CAPTURES) return;
     capturing = true;
-    refs.captureButton.disabled = true;
-    refs.captureButton.textContent = '...';
     refs.switchCameraButton.disabled = true;
+    // Clear the Smart Frame outline rather than leaving it frozen: the
+    // tracking loop pauses for the capture window below (see onFrame),
+    // so nothing will redraw it until capture finishes.
+    overlayCtx.clearRect(0, 0, refs.overlayCanvas.width, refs.overlayCanvas.height);
 
     const totalMs = CAPTURE_SEQUENCE.sensorSettleMs + CAPTURE_SEQUENCE.burstDurationMs;
-    const stopTicking = startCapturingOverlay(refs, totalMs);
+    const stopTicking = startCaptureCountdown(refs, totalMs);
     let succeeded = false;
 
     const aux: AuxCaptureData = {
@@ -152,8 +154,8 @@ function startViewfinder(): void {
     runCaptureSequence(refs.video, track, latestSnapshot, currentFacingMode, aux)
       .then((result) => {
         stopTicking();
-        showCapturingSuccess(refs);
         succeeded = true;
+        showCaptureSuccess(refs);
         const stored: StoredCapture = {
           id: makeCaptureId(),
           blob: result.blob,
@@ -189,15 +191,13 @@ function startViewfinder(): void {
       .finally(() => {
         stopTicking();
         capturing = false;
-        const full = sessionCaptureCount >= MAX_SESSION_CAPTURES;
-        refs.captureButton.disabled = full;
-        refs.captureButton.textContent = full ? 'Full' : 'Capture';
         refs.switchCameraButton.disabled = false;
-        // Leave the success checkmark up briefly so it's unmistakable;
-        // on a failure (rare, runCaptureSequence degrades most errors
-        // internally rather than rejecting) hide immediately instead of
-        // showing a fake success beat.
-        window.setTimeout(() => hideCapturingOverlay(refs), succeeded ? 900 : 0);
+        const full = sessionCaptureCount >= MAX_SESSION_CAPTURES;
+        // Leave the success checkmark up on the button briefly so it's
+        // unmistakable; on a failure (rare, runCaptureSequence degrades
+        // most errors internally rather than rejecting) reset immediately
+        // instead of showing a fake success beat.
+        window.setTimeout(() => resetCaptureButton(refs, full), succeeded ? 900 : 0);
       });
   }
 
@@ -245,6 +245,19 @@ function startViewfinder(): void {
 
   function onFrame(): void {
     if (!loopActive || !tracker) return;
+
+    if (capturing) {
+      // Skip tracking/gate-eval/overlay-draw work for the duration of an
+      // active capture: MediaRecorder + the burst loop + (maybe)
+      // ImageCapture are already stacking real CPU/GPU load in this
+      // window, and none of this frame's tracking result would be used
+      // anyway (the trigger, if any, already fired). Keep the rAF/rVFC
+      // loop alive -- so it resumes cleanly the instant capturing flips
+      // back to false -- without doing any of the expensive work.
+      scheduleNextFrame(refs.video, onFrame);
+      return;
+    }
+
     const now = performance.now();
 
     const trackerResult = tracker.detect(refs.video, now);
@@ -343,34 +356,36 @@ const CAPTURE_GUIDANCE_STEPS: { until: number; text: string }[] = [
 ];
 
 /**
- * Full-window capture feedback: a countdown, a progress bar, and
- * rotating movement guidance, for both manual and auto capture (the
- * two only entry points both funnel through performCapture()). Sound/
- * haptics alone (captureSequence.ts) were easy to miss, and a brief
- * end-of-capture flash wasn't visible/obvious enough either -- this
- * covers the entire ~5.5s window instead of a moment at the end.
+ * Full-window capture feedback, without ever covering the live preview:
+ * the shutter button itself turns red and counts down (so it's the one
+ * thing guaranteed not to hide the face being captured), and rotating
+ * movement guidance goes into the existing small prompt-banner instead
+ * of a dedicated overlay. A prior version used a full-screen dimmed
+ * overlay card for this -- on-device that hid the user's own face for
+ * the entire ~5.5s window, defeating the point of live feedback, so it
+ * was removed in favor of this button+banner approach. Sound/haptics
+ * alone (captureSequence.ts) were easy to miss, hence still wanting
+ * *some* visible countdown, just not one that blocks the view.
  * Returns a stop function that halts the ticking (idempotent, safe to
- * call more than once) without hiding the overlay, so the caller can
- * show the success state first and hide the whole thing afterward.
+ * call more than once) without touching button/banner state, so the
+ * caller can layer the success state on top afterward.
  */
-function startCapturingOverlay(refs: ViewfinderRefs, totalMs: number): () => void {
-  refs.capturingSuccessState.classList.add('hidden');
-  refs.capturingProgressState.classList.remove('hidden');
-  refs.capturingOverlay.classList.remove('hidden');
-  refs.promptBanner.classList.add('hidden-by-capture');
-  refs.liveReadout.classList.add('hidden-by-capture');
+function startCaptureCountdown(refs: ViewfinderRefs, totalMs: number): () => void {
+  refs.captureButton.classList.remove('captured');
+  refs.captureButton.classList.add('recording');
+  refs.captureButton.disabled = true;
+  refs.promptBanner.classList.remove('none', 'green');
 
   const startedAt = performance.now();
   function tick(): void {
     const elapsed = performance.now() - startedAt;
     const fraction = Math.min(1, elapsed / totalMs);
     const remainingS = Math.max(0, (totalMs - elapsed) / 1000);
-    refs.capturingTimer.textContent = `${remainingS.toFixed(1)}s`;
-    refs.capturingProgressFill.style.width = `${(fraction * 100).toFixed(1)}%`;
+    refs.captureButton.textContent = remainingS.toFixed(1);
     const step =
       CAPTURE_GUIDANCE_STEPS.find((s) => fraction <= s.until) ??
       CAPTURE_GUIDANCE_STEPS[CAPTURE_GUIDANCE_STEPS.length - 1];
-    refs.capturingGuidance.textContent = step.text;
+    refs.promptBanner.textContent = step.text;
   }
   tick();
   const intervalId = window.setInterval(tick, 100);
@@ -378,15 +393,16 @@ function startCapturingOverlay(refs: ViewfinderRefs, totalMs: number): () => voi
   return () => window.clearInterval(intervalId);
 }
 
-function showCapturingSuccess(refs: ViewfinderRefs): void {
-  refs.capturingProgressState.classList.add('hidden');
-  refs.capturingSuccessState.classList.remove('hidden');
+function showCaptureSuccess(refs: ViewfinderRefs): void {
+  refs.captureButton.classList.remove('recording');
+  refs.captureButton.classList.add('captured');
+  refs.captureButton.textContent = 'Saved';
 }
 
-function hideCapturingOverlay(refs: ViewfinderRefs): void {
-  refs.capturingOverlay.classList.add('hidden');
-  refs.promptBanner.classList.remove('hidden-by-capture');
-  refs.liveReadout.classList.remove('hidden-by-capture');
+function resetCaptureButton(refs: ViewfinderRefs, full: boolean): void {
+  refs.captureButton.classList.remove('recording', 'captured');
+  refs.captureButton.disabled = full;
+  refs.captureButton.textContent = full ? 'Full' : 'Capture';
 }
 
 function scheduleNextFrame(video: HTMLVideoElement, cb: () => void): void {

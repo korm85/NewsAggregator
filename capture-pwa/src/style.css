@@ -150,114 +150,26 @@ button.secondary {
 }
 
 /**
- * Full-window capture feedback covering the entire ~5.5s capture
- * sequence (settle + burst), not just a moment at the end: a
- * countdown, a progress bar, rotating movement guidance, then a clear
- * success state. Sound/haptics alone (captureSequence.ts) were easy to
- * miss, and a brief end-of-capture flash wasn't obvious enough either.
- * Same class-toggle-driven state pattern as .prompt-banner/
- * .live-readout elsewhere in this file.
+ * Capture feedback lives on the shutter button itself (turns red and
+ * counts down, then flashes green on success) rather than a separate
+ * overlay: a full-screen dimmed card covering the whole ~5.5s capture
+ * window was tried first, but on-device that hid the user's own face
+ * for the entire capture -- the one thing that should never happen
+ * during a "smile capture" app. Movement guidance during the countdown
+ * reuses the existing small .prompt-banner instead, so the live
+ * preview stays fully visible throughout.
  */
-.capturing-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(15, 23, 42, 0.55);
-}
-
-.capturing-overlay.hidden {
-  display: none;
-}
-
-.capturing-progress-state,
-.capturing-success-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  width: min(85vw, 340px);
-  border-radius: 20px;
-  padding: 28px 32px;
-}
-
-.capturing-progress-state.hidden,
-.capturing-success-state.hidden {
-  display: none;
-}
-
-.capturing-progress-state {
-  background: rgba(15, 23, 42, 0.9);
-  border: 2px solid var(--accent);
-}
-
-.capturing-timer {
-  font-size: 2.2rem;
-  font-weight: 700;
+.shutter-btn.recording {
+  background: var(--danger);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.85);
+  font-size: 1.3rem;
   font-variant-numeric: tabular-nums;
-  color: var(--text);
 }
 
-.capturing-progress {
-  width: 100%;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.15);
-  overflow: hidden;
-}
-
-.capturing-progress-fill {
-  height: 100%;
-  width: 0%;
-  background: var(--accent);
-  transition: width 0.1s linear;
-}
-
-.capturing-guidance {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text);
-  text-align: center;
-  min-height: 1.4em;
-}
-
-.capturing-success-state {
-  background: rgba(15, 61, 46, 0.92);
-  border: 2px solid var(--green);
-  animation: capture-success-pop 400ms ease-out;
-}
-
-.capturing-check {
-  font-size: 2.8rem;
-  line-height: 1;
-  color: var(--green);
-}
-
-.capturing-success-text {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--green);
-}
-
-@keyframes capture-success-pop {
-  0% {
-    opacity: 0;
-    transform: scale(0.85);
-  }
-  60% {
-    opacity: 1;
-    transform: scale(1.05);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-.prompt-banner.hidden-by-capture,
-.live-readout.hidden-by-capture {
-  display: none;
+.shutter-btn.captured {
+  background: var(--green);
+  color: #06231f;
 }
 
 .top-bar,

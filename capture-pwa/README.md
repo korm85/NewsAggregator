@@ -139,18 +139,24 @@ truth `X_SIGN` is supposed to track.
   wrapper. No network calls, no server. **Clear all** in the gallery
   wipes it.
 
-## Capture feedback: a guided window, not a silent wait
+## Capture feedback: visible countdown, never over the face
 
 Sound/haptics alone (`fireHaptics`/`playCaptureSound` in
 `captureSequence.ts`) were easy to miss, especially for auto-capture
-where nothing else changes on screen, and a brief end-of-capture flash
-wasn't obvious enough either (`src/main.ts`, superseded now). The
-5.5-second capture window (`sensorSettleMs` + `burstDurationMs`) now
-shows a full-screen overlay the whole time: a countdown, a progress bar,
-and guidance text that rotates through a few small-movement prompts
-("hold still, locking focus" -> "slowly tilt left" -> "now center" ->
-"slowly tilt right" -> "hold center, almost done"), ending in an
-unmissable checkmark + "Captured" state held for ~900ms.
+where nothing else changes on screen. An earlier version covered the
+whole 5.5-second capture window with a full-screen dimmed overlay card
+(countdown + progress bar + guidance), but on-device that hid the very
+face being captured for the entire window -- defeating the point of
+live feedback in a smile-capture app. The fix: the countdown lives on
+the shutter button itself, which is the one element guaranteed not to
+sit over the live preview. The button turns red and counts down in
+seconds (`startCaptureCountdown` in `src/main.ts`), then briefly flashes
+green with "Saved" (`showCaptureSuccess`) before resetting. Rotating
+small-movement guidance ("hold still, locking focus" -> "slowly tilt
+left" -> "now center" -> "slowly tilt right" -> "hold center, almost
+done") goes into the existing small `.prompt-banner` pill at the top of
+the screen instead of a dedicated element, so nothing new blocks the
+view.
 
 The guidance is deliberately *small* movements, not a full head turn or
 walking the phone around: the still image is still picked from whichever
@@ -158,12 +164,27 @@ burst frame scores best on sharpness/clipping, so swinging through a
 wide angle range would just make more of the burst land outside the pose
 gate the auto-trigger already required. The point is catching a few
 different specular-highlight angles during the window (the spec's
-"manage reflections"), not re-posing the shot. The timer/guidance loop in
-`src/main.ts` (`startCapturingOverlay`) runs independently of the actual
-capture internals (`captureSequence.ts`), driven off the same
-`CAPTURE_SEQUENCE` constants rather than a callback threaded through the
-burst loop, so it's an approximate on-screen cue, not frame-exact sync
-with what's actually being sampled at that instant.
+"manage reflections"), not re-posing the shot. The timer/guidance loop
+runs independently of the actual capture internals (`captureSequence.ts`),
+driven off the same `CAPTURE_SEQUENCE` constants rather than a callback
+threaded through the burst loop, so it's an approximate on-screen cue,
+not frame-exact sync with what's actually being sampled at that instant.
+
+The live MediaPipe tracking loop (`onFrame` in `src/main.ts`) also now
+pauses -- skips detection, gate evaluation, and overlay redraw entirely
+-- for the duration of an active capture, resuming the instant it ends.
+This was a defensive fix for an on-device crash reported right as the
+5-second capture window finished: with no crash log available to pin
+down an exact cause, the working hypothesis is resource contention from
+running the continuously-active GPU-delegated face tracker at the same
+time as the max-resolution `MediaRecorder`, the 15-frame canvas burst,
+and (on Chrome/Android) `ImageCapture` all at once. None of that
+in-flight tracking work is actually used during a capture anyway (the
+trigger, if any, already fired), so pausing it costs nothing and
+meaningfully cuts concurrent load during the heaviest few seconds. If
+the crash recurs, the next step would be an actual browser console
+error or crash report to confirm the real cause rather than this
+resource-reduction hypothesis.
 
 ## Gallery: polished, metadata tucked away
 
