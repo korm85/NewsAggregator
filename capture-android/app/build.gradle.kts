@@ -21,6 +21,18 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // MediaPipe's native tasks-vision library ships a ~10-14MB .so
+        // per ABI; without this filter the debug APK bundles all four
+        // (arm64-v8a/armeabi-v7a/x86/x86_64), pushing it past 50MB.
+        // arm64-v8a alone covers virtually every real phone sold since
+        // ~2017 -- this is a real distribution choice, not just a size
+        // hack, since sideloading onto an actual device (not an x86
+        // emulator) is the whole point of this app. Drop this filter if
+        // you need to run it on an x86/x86_64 emulator instead.
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildTypes {
