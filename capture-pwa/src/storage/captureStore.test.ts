@@ -6,6 +6,9 @@ function makeCapture(overrides: Partial<StoredCapture> = {}): StoredCapture {
   return {
     id: Math.random().toString(36).slice(2),
     blob: new Blob(['fake-jpeg-bytes'], { type: 'image/jpeg' }),
+    stillCandidates: [new Blob(['fake-jpeg-bytes'], { type: 'image/jpeg' })],
+    stillScores: [1],
+    bestStillIndex: 0,
     offAxisDeg: 8,
     offAxisVec: { x: 0.1, y: -0.05 },
     rollDeg: 1.2,
@@ -44,6 +47,27 @@ describe('captureStore', () => {
     expect(all[0].id).toBe('a');
     expect(all[0].offAxisDeg).toBe(6.5);
     expect(all[0].blob).toBeInstanceOf(Blob);
+  });
+
+  it('round-trips all still candidates and the best-pick index', async () => {
+    const capture = makeCapture({
+      id: 'multi-still',
+      stillCandidates: [
+        new Blob(['frame-0'], { type: 'image/jpeg' }),
+        new Blob(['frame-1'], { type: 'image/jpeg' }),
+        new Blob(['frame-2'], { type: 'image/jpeg' }),
+      ],
+      stillScores: [10, 25, 5],
+      bestStillIndex: 1,
+    });
+    await saveCapture(capture);
+
+    const all = await listCaptures();
+    const stored = all.find((c) => c.id === 'multi-still')!;
+    expect(stored.stillCandidates).toHaveLength(3);
+    expect(stored.stillCandidates.every((b) => b instanceof Blob)).toBe(true);
+    expect(stored.stillScores).toEqual([10, 25, 5]);
+    expect(stored.bestStillIndex).toBe(1);
   });
 
   it('round-trips the supplementary video fields when present, and stays null when absent', async () => {

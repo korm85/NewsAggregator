@@ -46,6 +46,7 @@ export async function renderGalleryScreen(root: HTMLElement, onBack: () => void)
     thumb.innerHTML = `
       <img src="${url}" alt="Captured smile" />
       ${capture.videoBlob ? '<span class="thumb-video-badge" title="Video included">&#9654;</span>' : ''}
+      ${capture.stillCandidates.length > 1 ? `<span class="thumb-count-badge" title="${capture.stillCandidates.length} still candidates saved">${capture.stillCandidates.length}</span>` : ''}
     `;
     thumb.onclick = () => openLightbox(root, capture, url, () => renderGalleryScreen(root, onBack));
     grid.appendChild(thumb);
@@ -60,6 +61,31 @@ function openLightbox(
 ): void {
   const videoUrl = capture.videoBlob ? URL.createObjectURL(capture.videoBlob) : null;
   if (videoUrl) activeObjectUrls.push(videoUrl);
+
+  // All candidates grabbed at the trigger instant are kept, not just the
+  // auto-picked best (capture.blob) -- shown as a strip so nothing is
+  // silently hidden. Tapping one swaps the main preview; Save/Delete
+  // below always act on the auto-picked capture.blob regardless of
+  // which candidate is being previewed, so "which image is actually
+  // saved to your device" stays unambiguous.
+  const candidateUrls = capture.stillCandidates.map((blob) => URL.createObjectURL(blob));
+  for (const u of candidateUrls) activeObjectUrls.push(u);
+  const candidatesSection =
+    capture.stillCandidates.length > 1
+      ? `
+    <div class="still-candidates" id="still-candidates">
+      ${candidateUrls
+        .map(
+          (candidateUrl, i) => `
+        <button class="still-candidate-thumb ${i === capture.bestStillIndex ? 'best' : ''}" data-idx="${i}" title="Candidate ${i + 1}${i === capture.bestStillIndex ? ' (auto-picked as sharpest)' : ''}">
+          <img src="${candidateUrl}" alt="Still candidate ${i + 1}" />
+          ${i === capture.bestStillIndex ? '<span class="best-badge">Best</span>' : ''}
+        </button>`,
+        )
+        .join('')}
+    </div>
+    <div class="still-candidates-caption">${capture.stillCandidates.length} frames captured ~120ms apart at the trigger instant, in case one was blurry or blinked -- tap to preview, Save/Delete always use the sharpest (marked Best).</div>`
+      : '';
 
   // Shown full-frame, no cropping: unlike the still image, this isn't
   // worth reconstructing (see videoRecorder.ts on why the video is
@@ -85,8 +111,9 @@ function openLightbox(
     <button class="lightbox-close-x" id="lightbox-close" aria-label="Close">&times;</button>
     <div class="lightbox-content">
       <div class="result-image-wrap">
-        <img src="${url}" alt="Captured smile" />
+        <img src="${url}" alt="Captured smile" id="lightbox-main-img" />
       </div>
+      ${candidatesSection}
       ${videoSection}
       <div class="lightbox-date">${capturedAt}</div>
       <div class="actions-row">
@@ -103,6 +130,13 @@ function openLightbox(
           <div><span>Mouth box</span><span>${(capture.mouthBoxWidth * 100).toFixed(0)}% x ${(capture.mouthBoxHeight * 100).toFixed(0)}%</span></div>
           <div><span>Exposure lock</span><span>${capture.exposureLockSuccess ? 'Locked' : 'Auto'}</span></div>
           <div><span>Capture mode</span><span>${capture.captureMode}</span></div>
+          ${
+            capture.stillScores.length > 1
+              ? `<div><span>Still scores</span><span>${capture.stillScores
+                  .map((s, i) => `${s.toFixed(1)}${i === capture.bestStillIndex ? '*' : ''}`)
+                  .join(', ')} (*best)</span></div>`
+              : ''
+          }
           ${
             capture.cardboardMode
               ? `<div><span>Card</span><span>${capture.cardAllMarkersVisible ? 'All markers' : `${capture.cardMarkersDetected.length} marker(s)`}, ${capture.cardIsFlat ? 'flat' : 'tilted'}</span></div>
@@ -122,4 +156,12 @@ function openLightbox(
     overlay.remove();
     onChanged();
   };
+
+  const mainImg = overlay.querySelector<HTMLImageElement>('#lightbox-main-img')!;
+  for (const thumb of overlay.querySelectorAll<HTMLButtonElement>('.still-candidate-thumb')) {
+    thumb.onclick = () => {
+      const idx = Number(thumb.dataset.idx);
+      mainImg.src = candidateUrls[idx];
+    };
+  }
 }

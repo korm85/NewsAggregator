@@ -170,6 +170,9 @@ function startViewfinder(): void {
         const stored: StoredCapture = {
           id: makeCaptureId(),
           blob: result.blob,
+          stillCandidates: result.metadata.stillCandidates.map((c) => c.blob),
+          stillScores: result.metadata.stillCandidates.map((c) => c.score),
+          bestStillIndex: result.metadata.bestStillIndex,
           offAxisDeg: result.metadata.offAxisDeg,
           offAxisVec: result.metadata.offAxisVec,
           rollDeg: result.metadata.rollDeg,

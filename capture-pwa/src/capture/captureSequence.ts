@@ -36,6 +36,17 @@ export interface CaptureMetadata {
    * still-image anchor below.
    */
   video: RecordedVideo | null;
+  /**
+   * All `CAPTURE_SEQUENCE.stillFrameCount` still candidates grabbed at
+   * the trigger instant (see runCaptureSequence doc), in capture order,
+   * each independently scored (frameScore.ts, sharpness minus a
+   * clipping penalty). Nothing is discarded -- `CaptureResult.blob`
+   * above is always `stillCandidates[bestStillIndex].blob`, callers
+   * that want the rest (e.g. the gallery, for manual review) read this.
+   */
+  stillCandidates: { blob: Blob; score: number }[];
+  /** Index into stillCandidates of the auto-picked best (highest score). */
+  bestStillIndex: number;
 }
 
 export interface CaptureResult {
@@ -166,29 +177,36 @@ function computeCropRect(region: NormalizedRect, videoWidth: number, videoHeight
  * Video-first "Active Sweep" capture. Runs after the gate evaluator has
  * held every active gate (pitch/yaw/roll/distance/smile, +card in
  * cardboard mode) passing for the required frame count -- i.e. the
- * geometry is strictly locked at the instant this fires. Two artifacts
- * come out of the ~5.5s window that follows:
+ * geometry is strictly locked at the instant this fires. Two kinds of
+ * artifact come out of the ~5.5s window that follows:
  *
- * 1. A single uncompressed still, grabbed from the raw video track
- *    before anything else in this function runs -- no exposure lock,
- *    no settle delay, no await of any kind first -- so it reflects the
- *    exact frame that satisfied the gates, not a frame from hundreds of
- *    ms later. (An earlier version locked exposure and slept
- *    `sensorSettleMs` before this grab, inherited from when the still
- *    was picked from a multi-frame burst that needed settled exposure;
- *    for a single anchor frame that's pure added latency with no
- *    benefit, so the lock/settle moved after this grab, ahead of the
- *    video instead -- see below.) Never sourced from MediaRecorder
- *    output (lossy) and never from the browser's native ImageCapture
- *    photo pipeline either -- ImageCapture applies its own hardware
- *    tone mapping that can't be undone, which is worse for a color-
- *    calibration anchor than the resolution it would gain. There is
- *    deliberately no multi-frame scoring/selection anymore: the
- *    downstream color algorithm doesn't need a perfect still, it needs
- *    the video below.
+ * 1. `CAPTURE_SEQUENCE.stillFrameCount` (3) uncompressed still
+ *    candidates, grabbed from the raw video track before anything else
+ *    in this function runs -- no exposure lock, no settle delay, no
+ *    await of any kind first -- so the first one reflects the exact
+ *    frame that satisfied the gates, not a frame from hundreds of ms
+ *    later. The following two are spaced `stillFrameIntervalMs` (120ms)
+ *    apart, specifically to cover a typical blink, rather than all
+ *    three being an instantaneous burst that a blink could still take
+ *    out entirely. (An earlier version locked exposure and slept
+ *    `sensorSettleMs` before any still grab at all, inherited from when
+ *    the still was picked from a much longer multi-frame burst that
+ *    needed settled exposure; for a small, fast set of anchor frames
+ *    that ordering was pure added latency with no benefit, so the
+ *    lock/settle moved after all three grabs, ahead of the video
+ *    instead -- see below.) Never sourced from MediaRecorder output
+ *    (lossy) and never from the browser's native ImageCapture photo
+ *    pipeline either -- ImageCapture applies its own hardware tone
+ *    mapping that can't be undone, which is worse for a color-
+ *    calibration anchor than the resolution it would gain. Each
+ *    candidate is scored (sharpness minus a clipping penalty,
+ *    frameScore.ts) and the best is flagged (`bestStillIndex`), but
+ *    none are discarded -- the auto-pick is a convenience for callers
+ *    that just want one (e.g. the gallery thumbnail), not a claim that
+ *    the other two are worthless.
  * 2. A supplementary MediaRecorder clip, full camera frame (not cropped,
  *    see videoRecorder.ts), recording for the sweep's entire duration.
- *    This is now the primary color-calibration artifact: the multiple
+ *    This is the primary color-calibration artifact: the multiple
  *    reflection angles the sweep produces let the offline post-
  *    processor extract angular telemetry and remove glare more
  *    accurately than the live browser tracker could. No highlight
@@ -198,7 +216,7 @@ function computeCropRect(region: NormalizedRect, videoWidth: number, videoHeight
  * The live tracking loop is expected to be paused by the caller for
  * this entire window (see main.ts onFrame) -- both to avoid resource
  * contention with the recorder, and because nothing here consumes a
- * live tracking result once the still anchor is grabbed.
+ * live tracking result once the still candidates are grabbed.
  */
 export async function runCaptureSequence(
   video: HTMLVideoElement,
@@ -212,24 +230,35 @@ export async function runCaptureSequence(
   const stillCropRect = computeNormalizedCropRegion(snapshot.mouthBox, aux.cardboardMode);
   const crop = computeCropRect(stillCropRect, video.videoWidth, video.videoHeight);
 
-  // The uncompressed color anchor is grabbed FIRST, before anything else
-  // in this function -- no await stands between the caller invoking
-  // this and the `drawImage` call inside captureAndScoreFrame, so the
-  // saved pixels are (as close as the browser's own camera pipeline
-  // allows) the exact frame that satisfied the gates, not a frame from
-  // 500ms+ later. Exposure/WB is whatever was live and auto-computed at
-  // that instant -- the same thing the user just watched go green --
-  // rather than a locked value; locking BEFORE this grab would trade
-  // capture latency for exposure precision on a single frame that
-  // doesn't need cross-frame consistency, which isn't the right trade
-  // here (confirmed: on-device lag between "green" and the saved still
-  // was the actual reported problem, not exposure drift on the anchor).
-  const stillFrame = await captureAndScoreFrame(video, crop, overlayLines);
+  // Grabbed FIRST, before anything else in this function -- no await
+  // stands between the caller invoking this and the first `drawImage`
+  // call inside captureAndScoreFrame, so the earliest candidate's saved
+  // pixels are (as close as the browser's own camera pipeline allows)
+  // the exact frame that satisfied the gates, not a frame from 500ms+
+  // later. Exposure/WB is whatever was live and auto-computed at that
+  // instant -- the same thing the user just watched go green -- rather
+  // than a locked value; locking BEFORE these grabs would trade capture
+  // latency for exposure precision on frames that don't need
+  // cross-frame consistency with anything but each other, which isn't
+  // the right trade here (confirmed: on-device lag between "green" and
+  // the saved still was the actual reported problem, not exposure drift
+  // on the anchor).
+  const stillCandidates = [];
+  for (let i = 0; i < CAPTURE_SEQUENCE.stillFrameCount; i++) {
+    stillCandidates.push(await captureAndScoreFrame(video, crop, overlayLines));
+    if (i < CAPTURE_SEQUENCE.stillFrameCount - 1) await sleep(CAPTURE_SEQUENCE.stillFrameIntervalMs);
+  }
+  let bestStillIndex = 0;
+  for (let i = 1; i < stillCandidates.length; i++) {
+    if (stillCandidates[i].score > stillCandidates[bestStillIndex].score) bestStillIndex = i;
+  }
+  const bestStill = stillCandidates[bestStillIndex];
 
   // Exposure lock + settle now happen here instead, ahead of the video
-  // recording rather than the still: their value is keeping the SWEEP's
-  // multiple frames photometrically consistent for the offline glare-
-  // removal step, which the already-captured anchor above doesn't need.
+  // recording rather than the stills: their value is keeping the
+  // SWEEP's multiple frames photometrically consistent for the offline
+  // glare-removal step, which the already-captured candidates above
+  // don't need.
   const exposureLockSuccess = await tryLockCapture(track);
   await sleep(CAPTURE_SEQUENCE.sensorSettleMs);
 
@@ -246,8 +275,8 @@ export async function runCaptureSequence(
   await releaseLock(track);
 
   return {
-    imageUrl: URL.createObjectURL(stillFrame.blob),
-    blob: stillFrame.blob,
+    imageUrl: URL.createObjectURL(bestStill.blob),
+    blob: bestStill.blob,
     metadata: {
       offAxisDeg: snapshot.offAxisDeg,
       offAxisVec: snapshot.offAxisVec,
@@ -262,6 +291,8 @@ export async function runCaptureSequence(
       deviceModel: navigator.userAgent,
       capturedAt,
       captureMode,
+      stillCandidates: stillCandidates.map((c) => ({ blob: c.blob, score: c.score })),
+      bestStillIndex,
       cardboardMode: aux.cardboardMode,
       card: aux.card,
       lightDirection: aux.light?.direction2D ?? null,

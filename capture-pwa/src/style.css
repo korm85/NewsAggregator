@@ -458,6 +458,81 @@ button.secondary {
   justify-content: center;
 }
 
+/** How many still candidates were saved for this capture (see captureSequence.ts CAPTURE_SEQUENCE.stillFrameCount). Separate corner from the video badge so both can show at once. */
+.gallery-thumb .thumb-count-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  background: rgba(15, 23, 42, 0.75);
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 700;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/**
+ * All still candidates from a capture (see captureSequence.ts), shown
+ * as a horizontally-scrolling strip below the main lightbox image so
+ * nothing captured is hidden from review, even though only one
+ * (auto-picked as sharpest) is what Save/Delete act on.
+ */
+.still-candidates {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px;
+  width: min(90vw, 420px);
+}
+
+.still-candidate-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 72px;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  background: #000;
+}
+
+.still-candidate-thumb.best {
+  border-color: var(--green);
+}
+
+.still-candidate-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.still-candidate-thumb .best-badge {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: var(--green);
+  color: #06231f;
+  font-size: 0.6rem;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.still-candidates-caption {
+  width: min(90vw, 420px);
+  text-align: left;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: -4px;
+}
+
 .lightbox {
   position: fixed;
   inset: 0;

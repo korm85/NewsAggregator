@@ -125,17 +125,32 @@ export const THRESHOLDS = {
 
 export const CAPTURE_SEQUENCE = {
   ringFillMs: 400,
+  /**
+   * Three still candidates are grabbed in rapid succession right at the
+   * trigger instant, not just one -- insurance against a single bad
+   * frame (blink, motion blur, a stray highlight) with no fallback,
+   * which was the accepted risk of the original single-anchor-frame
+   * design. All three are kept (nothing is silently discarded) and each
+   * is scored (sharpness/clipping, frameScore.ts) so the best one can be
+   * flagged for callers that just want one, e.g. the gallery thumbnail.
+   * 120ms between frames specifically covers a typical human blink
+   * (100-400ms) without meaningfully delaying the exposure lock/settle
+   * that follows -- still effectively "at the trigger instant" next to
+   * the 5s sweep, and far faster than the 500ms `sensorSettleMs` delay
+   * this whole capture used to (wrongly) pay before grabbing anything.
+   */
+  stillFrameCount: 3,
+  stillFrameIntervalMs: 120,
   sensorSettleMs: 500,
   /**
-   * The "Active Sweep" window: the uncompressed still anchor is grabbed
-   * at the very start of this window (before the user begins moving the
-   * camera), then a supplementary video records for its full duration
-   * while the user slowly sweeps the camera side-to-side. The video, not
-   * the still, is now the primary color-calibration artifact -- the
-   * offline post-processor extracts angular telemetry and removes glare
-   * from the multiple reflection angles the sweep captures, more
-   * accurately than the live browser tracker could. No per-frame
-   * scoring/selection happens client-side anymore (see captureSequence.ts).
+   * The "Active Sweep" window: the three still candidates above are
+   * grabbed before this window starts (before the user begins moving
+   * the camera), then a supplementary video records for this window's
+   * full duration while the user slowly sweeps the camera side-to-side.
+   * The video, not the stills, is the primary color-calibration
+   * artifact -- the offline post-processor extracts angular telemetry
+   * and removes glare from the multiple reflection angles the sweep
+   * captures, more accurately than the live browser tracker could.
    */
   burstDurationMs: 5000,
 } as const;

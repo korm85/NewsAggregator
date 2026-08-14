@@ -10,7 +10,18 @@ const STORE_NAME = 'captures';
 
 export interface StoredCapture {
   id: string;
+  /** The auto-picked best of stillCandidates below (highest sharpness/clipping score). Used everywhere a single image is needed: thumbnail, main lightbox view, download. */
   blob: Blob;
+  /**
+   * All still candidates grabbed at the trigger instant (see
+   * captureSequence.ts, CAPTURE_SEQUENCE.stillFrameCount), in capture
+   * order, kept alongside `blob` rather than discarded -- insurance
+   * against the auto-pick being wrong for a given capture. Includes the
+   * one that became `blob`. `bestStillIndex` marks which.
+   */
+  stillCandidates: Blob[];
+  stillScores: number[];
+  bestStillIndex: number;
   offAxisDeg: number;
   offAxisVec: { x: number; y: number };
   rollDeg: number;

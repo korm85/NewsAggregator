@@ -8,11 +8,12 @@ Sweep" capture window begins. That window's job is not to hold still --
 it deliberately asks the user to slowly move the camera side-to-side, so
 a full-frame video clip (the primary color-calibration artifact) samples
 multiple reflection angles for an offline post-processor to extract
-angular telemetry and remove glare from. A single uncompressed still
-image is grabbed at the exact instant the window starts, before the
-sweep begins, as a color anchor -- not a competing source of truth, and
-not scored/selected from multiple frames the way earlier versions did
-(see "Video-first capture: a single anchor frame, not a scored burst"
+angular telemetry and remove glare from. Three uncompressed still
+candidates are grabbed in rapid succession right at the instant the
+window starts, before the sweep begins, as color anchors -- not a
+competing source of truth for the video, but not a single unrecoverable
+frame either; all three are kept, and the sharpest is auto-flagged
+(see "Video-first capture: three still candidates, not a scored burst"
 below).
 
 Capture triggers two ways, switched via a **Manual** toggle (top-left,
@@ -132,12 +133,15 @@ truth `X_SIGN` is supposed to track.
   every active gate holds passing for `THRESHOLDS.holdFramesRequired`
   consecutive frames, capture fires automatically. In Manual mode, tap
   **Capture** any time a face is detected, regardless of gate state.
-- Capture grabs a single uncompressed still frame -- cropped to the
-  tracked mouth bounding box, pose/smile/card readout burned in --
-  **immediately**, before anything else runs, so it reflects the exact
-  frame that satisfied the gates rather than a frame from hundreds of
-  ms later (see "Zero-lag still capture" below for why this ordering
-  matters). *Only after* that grab does it lock exposure/WB/focus at
+- Capture grabs **three** uncompressed still candidates -- cropped to
+  the tracked mouth bounding box, pose/smile/card readout burned in,
+  ~120ms apart (long enough to cover a typical blink) -- starting
+  **immediately**, before anything else runs, so the first reflects the
+  exact frame that satisfied the gates rather than a frame from
+  hundreds of ms later (see "Zero-lag still capture" below for why this
+  ordering matters). All three are kept and each is scored, the
+  sharpest auto-flagged as the default (see "Video-first capture"
+  below). *Only after* all three grabs does it lock exposure/WB/focus at
   the *current* auto-computed values if the platform allows it
   (`src/capture/deviceCamera.ts` reads `track.getSettings()` before
   switching to manual, since switching without a value snaps some
@@ -189,26 +193,33 @@ existed:
   `distanceRange` (every unit test included).
 - **`smile`**: unchanged, see "Smile detection" below.
 
-## Video-first capture: a single anchor frame, not a scored burst
+## Video-first capture: three still candidates, not a scored burst
 
-Earlier versions sampled 15 raw canvas frames across the capture window
-and kept whichever scored best on sharpness/clipping, on the theory that
-the still image was the primary color-measurement artifact and the video
-was purely supplementary. That's now inverted: the downstream color
-calibration algorithm doesn't need a perfectly glare-free still, it needs
-the **video** -- multiple reflection angles from a deliberate camera
-sweep, which the offline post-processor uses to extract angular
-telemetry (more accurately than the live browser tracker could) and
-remove glare. So:
+Earlier versions sampled 15 raw canvas frames across the whole ~5s
+capture window and kept whichever scored best on sharpness/clipping, on
+the theory that the still image was the primary color-measurement
+artifact and the video was purely supplementary. That's now inverted:
+the downstream color calibration algorithm doesn't need a perfectly
+glare-free still, it needs the **video** -- multiple reflection angles
+from a deliberate camera sweep, which the offline post-processor uses
+to extract angular telemetry (more accurately than the live browser
+tracker could) and remove glare. So:
 
-- The still image (`src/capture/captureSequence.ts`) is now a **single**
-  uncompressed canvas frame, grabbed at the exact start of the capture
-  window -- before the user begins sweeping -- so it reflects the
-  strictly-gated starting geometry. There is no scoring/selection
-  step anymore. This is a real tradeoff, not a free simplification: a
-  blink or motion blur at that exact instant has no fallback frame to
-  fall back on, unlike the old best-of-15 approach. See "Zero-lag still
-  capture" below for exactly when "the exact start" means.
+- The still image (`src/capture/captureSequence.ts`) is now
+  **`CAPTURE_SEQUENCE.stillFrameCount` (3)** uncompressed canvas
+  candidates, grabbed at the exact start of the capture window -- before
+  the user begins sweeping, `stillFrameIntervalMs` (120ms) apart -- so
+  they reflect the strictly-gated starting geometry, not scattered
+  across the whole 5s window the way the old 15-frame burst was. All
+  three are kept and scored (sharpness minus a clipping penalty,
+  `frameScore.ts`); the sharpest is flagged as `bestStillIndex` and used
+  as the default single image everywhere (thumbnail, download), but
+  nothing is discarded -- the gallery lightbox shows all three so a
+  bad instant (blink, motion blur, a stray highlight) has a fallback
+  instead of ruining the only shot, without going back to a full
+  15-frame scored burst. See "Zero-lag still capture" below for exactly
+  what "the exact start" means, and why only the *first* of the three
+  is truly zero-lag.
 - `ImageCapture.takePhoto()` (the browser's dedicated photo pipeline,
   Chrome/Android only) is **bypassed entirely**, not just left as a
   fallback path. It applies its own hardware tone mapping that can't be
@@ -224,13 +235,14 @@ remove glare. So:
   compression artifacts in the specular-highlight detail glare-removal
   depends on. No highlight clipping or glare rejection is applied
   client-side -- every specular highlight is deliberately passed
-  through to the saved video, unlike the old still-image scoring which
-  penalized them.
-- The Active Sweep window itself is still ~5.5s
-  (`CAPTURE_SEQUENCE.sensorSettleMs` + `burstDurationMs`, config.ts),
-  unchanged in duration, just repurposed: it used to be a 15-frame
-  burst interval, now it's simply how long the video records while the
-  user sweeps.
+  through to the saved video, unlike the still-image scoring above,
+  which still penalizes clipping when picking the default still.
+- The Active Sweep window itself (the video recording) is still ~5s
+  (`CAPTURE_SEQUENCE.burstDurationMs`), just repurposed from the old
+  15-frame burst interval to simply how long the video records while
+  the user sweeps. The three still candidates add roughly
+  `2 * stillFrameIntervalMs` (~240ms) up front, before the exposure
+  lock/settle/video start -- small next to the 5s window, but real.
 - The live MediaPipe tracking loop still pauses for the entire window
   (see "Capture feedback" below) -- nothing about that changed, video-
   first capture doesn't need live tracking data any more than the old
@@ -239,25 +251,29 @@ remove glare. So:
 ## Zero-lag still capture: grab first, lock and settle after
 
 `runCaptureSequence()` originally locked exposure/WB/focus and then
-`sleep`d for `sensorSettleMs` (500ms) *before* grabbing the still frame
+`sleep`d for `sensorSettleMs` (500ms) *before* grabbing any still frame
 -- inherited from the pre-video-first design, where the still was
-chosen from a multi-frame burst that needed settled exposure across all
-of it. Once the still became a single anchor frame (see "Video-first
-capture" above), that ordering was pure added latency with no benefit:
-the saved pixels were being captured 500ms+ after the gates actually
-went green, not at the moment they did.
+chosen from a 15-frame burst that needed settled exposure across all of
+it. Once the still became a small, fast set of anchor frames (see
+"Video-first capture" above), that ordering was pure added latency with
+no benefit: the saved pixels were being captured 500ms+ after the gates
+actually went green, not at the moment they did.
 
-Fixed by reordering: the still frame is now grabbed **first**, with no
-`await` of any kind ahead of it, so the saved pixels are (as close as
-the browser's own camera pipeline allows) the exact frame that
-satisfied the gates. Exposure lock + settle moved to *after* that grab,
-now positioned ahead of the video recording instead, where their value
--- keeping the sweep's multiple frames photometrically consistent for
-the offline glare-removal step -- still applies. Concretely, the still
-is captured under whatever auto-exposure/WB was live at that instant,
-not a locked value; that's the frame the user watched go green, so it's
-the right tradeoff for a single anchor frame that doesn't need
-cross-frame consistency the way the video does.
+Fixed by reordering: all three still candidates are now grabbed
+**first**, with no `await` of any kind ahead of the first one, so the
+earliest candidate's saved pixels are (as close as the browser's own
+camera pipeline allows) the exact frame that satisfied the gates. The
+second and third are `stillFrameIntervalMs` (120ms) apart from there --
+a deliberate, small, *known* delay (to cover a blink), not an
+accidental one. Exposure lock + settle moved to *after* all three
+grabs, now positioned ahead of the video recording instead, where their
+value -- keeping the sweep's multiple frames photometrically consistent
+for the offline glare-removal step -- still applies. Concretely, all
+three stills are captured under whatever auto-exposure/WB was live at
+that moment, not a locked value; that's what the user watched go green,
+so it's the right tradeoff for anchor frames that don't need
+cross-frame consistency with the video the way the video's own frames
+need consistency with each other.
 
 What's left is the latency floor a browser doesn't expose control
 over: the camera pipeline's own sensor-to-`<video>`-element delay, and
@@ -321,14 +337,28 @@ mouth box percentages, etc.) directly under the image, unavoidable and
 fairly technical-looking for a review screen. Redesigned
 (`src/ui/galleryScreen.ts`): the grid thumbnails no longer carry a raw
 angle badge (a small video icon is the only overlay, and only when a
-clip was recorded); the lightbox leads with the image/video, a clean
+clip was recorded, plus a small count badge when more than one still
+candidate was saved); the lightbox leads with the image/video, a clean
 date/time subtitle, and Save/Delete actions, then all 8+ metadata fields
 live inside a collapsed `<details>` "Capture details" disclosure, opt-in
 for anyone who wants the numbers rather than always in front. A close
 button in the corner replaces the old bottom "Close" button, and the
 lightbox itself scrolls (`overflow-y: auto`) instead of risking overflow
-on a small screen now that it can hold an image, a video, and a
-disclosure panel.
+on a small screen now that it can hold an image, a still-candidates
+strip, a video, and a disclosure panel.
+
+Below the main image, a horizontally-scrolling strip shows every still
+candidate captured (see "Video-first capture" above), the sharpest
+outlined green and badged "Best". Tapping a candidate swaps the main
+preview so any of them can be inspected full-size; Save/Delete always
+act on the auto-picked best regardless of which candidate is being
+previewed, so what actually leaves the device on "Save to device" stays
+unambiguous even while browsing alternates. Nothing about a candidate
+can currently be "promoted" to replace the auto-pick -- if the sharpest
+one isn't the one someone actually wants, there's no in-app way to
+change which blob is `StoredCapture.blob` short of deleting the whole
+capture and retaking it. Worth a follow-up if manual override turns out
+to matter in practice.
 
 The older 7-gate system (`gateEvaluator.ts`, `captureController.ts`,
 `gates/types.ts`, `capture/exposureSample.ts`) predated the Smart Frame
@@ -469,13 +499,17 @@ operating the phone.
   (0.15-0.25) approximates 15-25cm but isn't calibrated against real
   captures -- runtime-adjustable via the Debug panel for exactly this
   reason. See "Gates: pose, distance, and smile" above.
-- **The still-image anchor has no fallback frame anymore.** The old
-  best-of-15-scored-frames approach protected against a single bad
-  instant (blink, motion blur, stray highlight); the new single-frame-
-  at-window-start approach doesn't. This is an accepted tradeoff of the
-  video-first pivot (the video is the real data now), not an oversight,
-  but it does mean a bad anchor frame has no recovery path within a
-  single capture.
+- **Resolved (partially): the still-image anchor has fallback frames
+  again.** A single-frame-at-window-start design (no scoring, no
+  fallback) briefly replaced the old best-of-15 approach as part of the
+  video-first pivot, then was revised again to grab 3 candidates
+  (`stillFrameCount`) 120ms apart instead of just 1 -- specifically to
+  cover a blink -- with all 3 kept and the sharpest auto-flagged. This
+  is real insurance, but weaker than the old 15-frame version across a
+  full 5s window: 3 frames spanning ~240ms only protects against a
+  brief bad instant near the trigger, not drift or a longer blink later
+  in the window (which the still doesn't sample at all -- only the
+  video covers the full window now).
 - **No Web Worker.** The tracker and gate evaluator run on the main
   thread, driven by `requestVideoFrameCallback`. Both layers are already
   pure and DOM-free, so moving them into a worker is straightforward but

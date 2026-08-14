@@ -1,16 +1,14 @@
 /**
  * Draws a single crop of the live video to an offscreen canvas, burns
- * the overlay bar in, and encodes it. `score`/`clippedFraction` are
- * vestigial from when this ran across a 15-frame burst and picked the
- * sharpest/least-clipped result (see captureSequence.ts) -- the still
- * image is now a single uncompressed frame grabbed at the exact start
- * of the capture window, before the sweep begins, so nothing compares
- * scores anymore. Kept on the return type since they're cheap to
- * compute and harmless, not because anything currently reads them.
- * Sharpness is approximated with a Laplacian variance over a small
- * downsampled grayscale copy; clipping is the fraction of pixels with
- * any channel above 250. Scoring never touches the full-resolution
- * pixels, only the frame that gets encoded to JPEG is full-res.
+ * the overlay bar in, and encodes it. `score` picks the best of the
+ * `CAPTURE_SEQUENCE.stillFrameCount` still candidates captureSequence.ts
+ * grabs at the trigger instant (all are kept regardless, this just
+ * flags one as the default). Sharpness is approximated with a Laplacian
+ * variance over a small downsampled grayscale copy; `clippedFraction` is
+ * the fraction of pixels with any channel above 250 (folded into
+ * `score` as a penalty, also returned on its own). Scoring never
+ * touches the full-resolution pixels, only the frame that gets encoded
+ * to JPEG is full-res.
  */
 export interface ScoredFrame {
   blob: Blob;
