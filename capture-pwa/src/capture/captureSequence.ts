@@ -169,16 +169,23 @@ function computeCropRect(region: NormalizedRect, videoWidth: number, videoHeight
  * geometry is strictly locked at the instant this fires. Two artifacts
  * come out of the ~5.5s window that follows:
  *
- * 1. A single uncompressed still, grabbed from the raw video track at
- *    the exact start of the window (before the user begins sweeping),
- *    so it reflects the strictly-gated starting geometry. Never sourced
- *    from MediaRecorder output (lossy) and never from the browser's
- *    native ImageCapture photo pipeline either -- ImageCapture applies
- *    its own hardware tone mapping that can't be undone, which is worse
- *    for a color-calibration anchor than the resolution it would gain.
- *    There is deliberately no multi-frame scoring/selection anymore:
- *    the downstream color algorithm doesn't need a perfect still, it
- *    needs the video below.
+ * 1. A single uncompressed still, grabbed from the raw video track
+ *    before anything else in this function runs -- no exposure lock,
+ *    no settle delay, no await of any kind first -- so it reflects the
+ *    exact frame that satisfied the gates, not a frame from hundreds of
+ *    ms later. (An earlier version locked exposure and slept
+ *    `sensorSettleMs` before this grab, inherited from when the still
+ *    was picked from a multi-frame burst that needed settled exposure;
+ *    for a single anchor frame that's pure added latency with no
+ *    benefit, so the lock/settle moved after this grab, ahead of the
+ *    video instead -- see below.) Never sourced from MediaRecorder
+ *    output (lossy) and never from the browser's native ImageCapture
+ *    photo pipeline either -- ImageCapture applies its own hardware
+ *    tone mapping that can't be undone, which is worse for a color-
+ *    calibration anchor than the resolution it would gain. There is
+ *    deliberately no multi-frame scoring/selection anymore: the
+ *    downstream color algorithm doesn't need a perfect still, it needs
+ *    the video below.
  * 2. A supplementary MediaRecorder clip, full camera frame (not cropped,
  *    see videoRecorder.ts), recording for the sweep's entire duration.
  *    This is now the primary color-calibration artifact: the multiple
@@ -205,17 +212,30 @@ export async function runCaptureSequence(
   const stillCropRect = computeNormalizedCropRegion(snapshot.mouthBox, aux.cardboardMode);
   const crop = computeCropRect(stillCropRect, video.videoWidth, video.videoHeight);
 
+  // The uncompressed color anchor is grabbed FIRST, before anything else
+  // in this function -- no await stands between the caller invoking
+  // this and the `drawImage` call inside captureAndScoreFrame, so the
+  // saved pixels are (as close as the browser's own camera pipeline
+  // allows) the exact frame that satisfied the gates, not a frame from
+  // 500ms+ later. Exposure/WB is whatever was live and auto-computed at
+  // that instant -- the same thing the user just watched go green --
+  // rather than a locked value; locking BEFORE this grab would trade
+  // capture latency for exposure precision on a single frame that
+  // doesn't need cross-frame consistency, which isn't the right trade
+  // here (confirmed: on-device lag between "green" and the saved still
+  // was the actual reported problem, not exposure drift on the anchor).
+  const stillFrame = await captureAndScoreFrame(video, crop, overlayLines);
+
+  // Exposure lock + settle now happen here instead, ahead of the video
+  // recording rather than the still: their value is keeping the SWEEP's
+  // multiple frames photometrically consistent for the offline glare-
+  // removal step, which the already-captured anchor above doesn't need.
   const exposureLockSuccess = await tryLockCapture(track);
   await sleep(CAPTURE_SEQUENCE.sensorSettleMs);
 
-  // The uncompressed color anchor: grabbed now, before the sweep below
-  // begins, so it's the strictly-gated starting frame, not an arbitrary
-  // mid-sweep moment.
-  const stillFrame = await captureAndScoreFrame(video, crop, overlayLines);
-
   // Records from the raw track for the sweep's full duration. A
   // failure to start returns null; the still anchor above is already
-  // captured by this point regardless, so video is purely additive.
+  // captured regardless, so video is purely additive.
   const recording = startVideoRecording(track);
   await sleep(CAPTURE_SEQUENCE.burstDurationMs);
   const recordedVideo = recording ? await recording.stop().catch(() => null) : null;

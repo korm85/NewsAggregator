@@ -132,14 +132,18 @@ truth `X_SIGN` is supposed to track.
   every active gate holds passing for `THRESHOLDS.holdFramesRequired`
   consecutive frames, capture fires automatically. In Manual mode, tap
   **Capture** any time a face is detected, regardless of gate state.
-- Capture locks exposure/WB/focus at the *current* auto-computed values
-  if the platform allows it (`src/capture/deviceCamera.ts` reads
-  `track.getSettings()` before switching to manual, since switching
-  without a value snaps some devices to a near-black default instead of
-  preserving what the preview was showing), grabs a single uncompressed
-  still frame cropped to the tracked mouth bounding box with the
-  pose/smile/card readout burned in, then records a full-frame video for
-  the Active Sweep window and saves both with the full metadata set (see
+- Capture grabs a single uncompressed still frame -- cropped to the
+  tracked mouth bounding box, pose/smile/card readout burned in --
+  **immediately**, before anything else runs, so it reflects the exact
+  frame that satisfied the gates rather than a frame from hundreds of
+  ms later (see "Zero-lag still capture" below for why this ordering
+  matters). *Only after* that grab does it lock exposure/WB/focus at
+  the *current* auto-computed values if the platform allows it
+  (`src/capture/deviceCamera.ts` reads `track.getSettings()` before
+  switching to manual, since switching without a value snaps some
+  devices to a near-black default instead of preserving what the
+  preview was showing), then records a full-frame video for the Active
+  Sweep window and saves both with the full metadata set (see
   "Video-first capture" below). See "Capture feedback" below for what's
   on screen during this window.
 - The viewfinder keeps going after each shot. Up to `MAX_SESSION_CAPTURES`
@@ -203,7 +207,8 @@ remove glare. So:
   strictly-gated starting geometry. There is no scoring/selection
   step anymore. This is a real tradeoff, not a free simplification: a
   blink or motion blur at that exact instant has no fallback frame to
-  fall back on, unlike the old best-of-15 approach.
+  fall back on, unlike the old best-of-15 approach. See "Zero-lag still
+  capture" below for exactly when "the exact start" means.
 - `ImageCapture.takePhoto()` (the browser's dedicated photo pipeline,
   Chrome/Android only) is **bypassed entirely**, not just left as a
   fallback path. It applies its own hardware tone mapping that can't be
@@ -230,6 +235,38 @@ remove glare. So:
   (see "Capture feedback" below) -- nothing about that changed, video-
   first capture doesn't need live tracking data any more than the old
   approach did.
+
+## Zero-lag still capture: grab first, lock and settle after
+
+`runCaptureSequence()` originally locked exposure/WB/focus and then
+`sleep`d for `sensorSettleMs` (500ms) *before* grabbing the still frame
+-- inherited from the pre-video-first design, where the still was
+chosen from a multi-frame burst that needed settled exposure across all
+of it. Once the still became a single anchor frame (see "Video-first
+capture" above), that ordering was pure added latency with no benefit:
+the saved pixels were being captured 500ms+ after the gates actually
+went green, not at the moment they did.
+
+Fixed by reordering: the still frame is now grabbed **first**, with no
+`await` of any kind ahead of it, so the saved pixels are (as close as
+the browser's own camera pipeline allows) the exact frame that
+satisfied the gates. Exposure lock + settle moved to *after* that grab,
+now positioned ahead of the video recording instead, where their value
+-- keeping the sweep's multiple frames photometrically consistent for
+the offline glare-removal step -- still applies. Concretely, the still
+is captured under whatever auto-exposure/WB was live at that instant,
+not a locked value; that's the frame the user watched go green, so it's
+the right tradeoff for a single anchor frame that doesn't need
+cross-frame consistency the way the video does.
+
+What's left is the latency floor a browser doesn't expose control
+over: the camera pipeline's own sensor-to-`<video>`-element delay, and
+up to one frame's worth of `requestVideoFrameCallback` timing between
+the tick that evaluated the gates and the tick this function actually
+runs on (they're normally the same tick, since `performCapture()` calls
+straight through to this function with no intervening `await`). Neither
+has been measured on a real device -- unverified, same caveat as
+everything else in this project.
 
 ## Capture feedback: visible countdown, never over the face
 
