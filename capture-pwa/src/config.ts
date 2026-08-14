@@ -50,6 +50,27 @@ export const DISTANCE_GATE_DEFAULTS = { min: 0.15, max: 0.25 } as const;
 /** Buffer added outside [min, max] before an already-passing distance gate exits, so the adjustable range doesn't need separate enter/exit sliders. */
 export const DISTANCE_GATE_HYSTERESIS = 0.02;
 
+/**
+ * Self-timer-style "get ready" window between gates aligning and
+ * capture actually firing (3-2-1 style, matching iOS Camera's
+ * self-timer / Photo Booth), replacing a previous instant fire that
+ * on-device feedback called "unexpected and too aggressive" -- the
+ * entire prior gap was holdFramesRequired frames (~166ms), with no
+ * perceptible warning, and no way to cancel if the pose was only
+ * fleetingly right while the user was still adjusting. 3000ms is the
+ * standard shortest self-timer duration across mainstream camera apps
+ * -- a pattern-matched starting guess, not yet validated against this
+ * app's on-device feel, same caveat as every other placeholder
+ * threshold in this file. Runtime-adjustable via the viewfinder's
+ * Debug panel (see onCaptureArmDurationChange in main.ts) for exactly
+ * that reason -- ticks are derived as whole seconds of remaining time
+ * (see captureArmEvaluator.ts), so any duration just works without a
+ * separate tick-count constant.
+ */
+export const CAPTURE_ARM_DEFAULTS = {
+  durationMs: 3000,
+} as const;
+
 export const THRESHOLDS = {
   /**
    * Separate pitch/yaw thresholds (Smart Frame spec: max 15 degrees
@@ -110,7 +131,7 @@ export const THRESHOLDS = {
     exitMin: 0.45,
   } satisfies MinGateConfig,
 
-  /** Consecutive all-pass frames required before the capture sequence fires. */
+  /** Consecutive all-pass frames required before the get-ready countdown starts (see CAPTURE_ARM_DEFAULTS below) -- a flicker-debounce, not a user-facing cue on its own. */
   holdFramesRequired: 5,
 
   /** Minimum time a prompt stays on screen before it can be replaced. */

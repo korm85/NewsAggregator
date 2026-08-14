@@ -303,6 +303,36 @@ button.secondary {
   display: none;
 }
 
+/**
+ * Self-timer-style "get ready" countdown numeral (3, 2, 1), shown while
+ * captureArmEvaluator.ts's phase is 'counting'. Deliberately a plain
+ * DOM element positioned over the video, not drawn on the tracking
+ * overlay canvas -- see the doc comment on ViewfinderRefs.countdownNumeral
+ * in viewfinderScreen.ts for why (the canvas gets CSS-mirrored in
+ * front-camera mode, which would render digits backwards). No
+ * background fill, same "never cover the face" constraint as the rest
+ * of the capture feedback (see .shutter-btn.recording): a bold outline/
+ * shadow carries contrast instead of an opaque box.
+ */
+.countdown-numeral {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  font-size: clamp(96px, 32vw, 160px);
+  font-weight: 800;
+  color: #ffffff;
+  text-shadow: 0 0 12px rgba(0, 0, 0, 0.85), 0 0 32px rgba(0, 0, 0, 0.6);
+  -webkit-text-stroke: 2px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  user-select: none;
+}
+
+.countdown-numeral.hidden {
+  display: none;
+}
+
 .session-badge {
   position: absolute;
   top: max(56px, calc(env(safe-area-inset-top) + 48px));

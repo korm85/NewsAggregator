@@ -19,7 +19,15 @@ import {
 import { saveCapture, type StoredCapture } from './storage/captureStore';
 import { evaluateSmartFrame } from './gates/smartFrameEvaluator';
 import { createInitialSmartFrameState, type SmartFrameGateState } from './gates/smartFrameTypes';
-import { CAPTURE_MODE, CAPTURE_SEQUENCE, DISTANCE_GATE_DEFAULTS, MAX_SESSION_CAPTURES } from './config';
+import { evaluateCaptureArm } from './gates/captureArmEvaluator';
+import { createInitialCaptureArmState, type CaptureArmState } from './gates/captureArmTypes';
+import {
+  CAPTURE_ARM_DEFAULTS,
+  CAPTURE_MODE,
+  CAPTURE_SEQUENCE,
+  DISTANCE_GATE_DEFAULTS,
+  MAX_SESSION_CAPTURES,
+} from './config';
 
 const root = document.getElementById('app')!;
 
@@ -88,36 +96,53 @@ function startViewfinder(): void {
   let cardboardMode = false;
   let triggerMode: 'auto' | 'manual' = 'auto';
   let distanceRange: { min: number; max: number } = DISTANCE_GATE_DEFAULTS;
+  let captureArmDurationMs: number = CAPTURE_ARM_DEFAULTS.durationMs;
   let latestSnapshot: TrackerSnapshot | null = null;
   let latestCard: CardDetectionResult | null = null;
   let latestLight: LightEstimate | null = null;
   let lastCardCheckMs = -Infinity;
   let smartFrameState: SmartFrameGateState = createInitialSmartFrameState();
+  let captureArmState: CaptureArmState = createInitialCaptureArmState();
 
   const goToGallery = () => {
     loopActive = false;
     void renderGalleryScreen(root, startViewfinder);
   };
 
-  const refs = renderViewfinderScreen(root, currentFacingMode === 'front', DISTANCE_GATE_DEFAULTS, {
-    onOpenGallery: goToGallery,
-    onCapture: () => performCapture(),
-    onSwitchCamera: onSwitchCameraTapped,
-    onToggleTorch: onToggleTorchTapped,
-    onToggleCardboard: (checked) => {
-      cardboardMode = checked;
-      latestCard = null;
-      latestLight = null;
-      lastCardCheckMs = -Infinity;
-      smartFrameState = createInitialSmartFrameState();
+  const refs = renderViewfinderScreen(
+    root,
+    currentFacingMode === 'front',
+    DISTANCE_GATE_DEFAULTS,
+    CAPTURE_ARM_DEFAULTS.durationMs,
+    {
+      onOpenGallery: goToGallery,
+      onCapture: () => performCapture(),
+      onSwitchCamera: onSwitchCameraTapped,
+      onToggleTorch: onToggleTorchTapped,
+      onToggleCardboard: (checked) => {
+        cardboardMode = checked;
+        latestCard = null;
+        latestLight = null;
+        lastCardCheckMs = -Infinity;
+        smartFrameState = createInitialSmartFrameState();
+        captureArmState = createInitialCaptureArmState();
+      },
+      onToggleCaptureMode: (manual) => {
+        triggerMode = manual ? 'manual' : 'auto';
+        // A stale in-flight countdown must not survive a mode flip in
+        // either direction -- e.g. flipping auto->manual->auto shouldn't
+        // let an old armedSince timestamp cause an immediate spurious
+        // fire the instant auto mode is re-enabled.
+        captureArmState = createInitialCaptureArmState();
+      },
+      onDistanceRangeChange: (range) => {
+        distanceRange = range;
+      },
+      onCaptureArmDurationChange: (durationMs) => {
+        captureArmDurationMs = durationMs;
+      },
     },
-    onToggleCaptureMode: (manual) => {
-      triggerMode = manual ? 'manual' : 'auto';
-    },
-    onDistanceRangeChange: (range) => {
-      distanceRange = range;
-    },
-  });
+  );
   refs.video.srcObject = stream;
   refs.video.play().catch(() => {
     // Autoplay can be blocked in rare cases; the user still sees the
@@ -313,6 +338,35 @@ function startViewfinder(): void {
     );
     smartFrameState = evaluation.state;
 
+    // Self-timer-style get-ready countdown between gates aligning and
+    // capture actually firing (see captureArmEvaluator.ts). Guarded the
+    // same way the eventual fire is guarded below (auto mode, not
+    // switching camera, session not full) so a countdown that's
+    // mid-flight when one of those flips gets force-reset immediately
+    // instead of being left counting toward a capture that will never
+    // happen.
+    const armGuardsOk = triggerMode === 'auto' && !switchingCamera && sessionCaptureCount < MAX_SESSION_CAPTURES;
+    const armEvaluation = armGuardsOk
+      ? evaluateCaptureArm(
+          {
+            holdReached: evaluation.captureTriggered,
+            allPassed: evaluation.allPassed,
+            nowMs: now,
+            durationMs: captureArmDurationMs,
+          },
+          captureArmState,
+        )
+      : null;
+    captureArmState = armEvaluation ? armEvaluation.state : createInitialCaptureArmState();
+    if (armEvaluation?.tickJustChanged) {
+      fireTickHaptic();
+      playTickSound();
+    }
+    refs.countdownNumeral.classList.toggle('hidden', armEvaluation?.phase !== 'counting');
+    if (armEvaluation?.displayTick != null) {
+      refs.countdownNumeral.textContent = String(armEvaluation.displayTick);
+    }
+
     overlayCtx.clearRect(0, 0, refs.overlayCanvas.width, refs.overlayCanvas.height);
     drawOverlay(
       overlayCtx,
@@ -321,7 +375,7 @@ function startViewfinder(): void {
       trackerResult.mouthBox,
       evaluation.frameColor,
       evaluation.arrowDirection,
-      evaluation.holdCount / evaluation.holdRequired,
+      armEvaluation?.phase === 'counting' ? 0 : evaluation.holdCount / evaluation.holdRequired,
     );
     if (cardboardMode && trackerResult.mouthBox) {
       drawCardGuide(
@@ -333,7 +387,7 @@ function startViewfinder(): void {
       );
     }
 
-    updateReadout(refs, trackerResult, evaluation);
+    updateReadout(refs, trackerResult, evaluation, armEvaluation?.phase ?? 'idle');
 
     // Don't fight the "capturing"/"switching"/"full" disabled states the
     // click handlers set while something's already in flight. In auto
@@ -345,8 +399,7 @@ function startViewfinder(): void {
     }
 
     if (
-      triggerMode === 'auto' &&
-      evaluation.captureTriggered &&
+      armEvaluation?.fireNow &&
       !capturing &&
       !switchingCamera &&
       sessionCaptureCount < MAX_SESSION_CAPTURES
@@ -372,6 +425,36 @@ function startViewfinder(): void {
  * purpose, so it's one constant instruction instead.
  */
 const ACTIVE_SWEEP_PROMPT = 'Slowly move camera side-to-side';
+
+/**
+ * Per-tick feedback for the get-ready countdown (captureArmEvaluator.ts),
+ * modeled on captureSequence.ts's fireHaptics()/playCaptureSound() but
+ * deliberately not shared with it: a countdown tick needs to read as
+ * clearly distinct from the eventual capture-confirm chime, not as an
+ * early copy of it, so it's shorter and higher-pitched.
+ */
+function fireTickHaptic(): void {
+  if ('vibrate' in navigator) navigator.vibrate(25);
+}
+
+function playTickSound(): void {
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = 660;
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.08);
+    osc.onended = () => void ctx.close();
+  } catch {
+    // Audio unavailable; the haptic pulse above is the fallback, same
+    // pattern as the capture-confirm sound.
+  }
+}
 
 /**
  * Full-window capture feedback, without ever covering the live preview:
@@ -430,13 +513,24 @@ function scheduleNextFrame(video: HTMLVideoElement, cb: () => void): void {
   }
 }
 
+const COUNTDOWN_BANNER_TEXT = 'Hold that pose...';
+
 function updateReadout(
   refs: ViewfinderRefs,
   tr: TrackerSnapshot & { detected: boolean },
   evaluation: ReturnType<typeof evaluateSmartFrame>,
+  armPhase: CaptureArmState['phase'],
 ): void {
   refs.promptBanner.classList.remove('green', 'none');
-  if (evaluation.prompt) {
+  if (armPhase === 'counting') {
+    // evaluation.prompt is always null exactly while all gates are
+    // passing (see buildPrompt in smartFrameEvaluator.ts) -- precisely
+    // the window a countdown is running in, so without this override
+    // the banner would hide itself via .none right when it most needs
+    // to stay visible and say what's happening.
+    refs.promptBanner.textContent = COUNTDOWN_BANNER_TEXT;
+    refs.promptBanner.classList.add('green');
+  } else if (evaluation.prompt) {
     refs.promptBanner.textContent = evaluation.prompt;
     if (evaluation.frameColor === 'green') refs.promptBanner.classList.add('green');
   } else {

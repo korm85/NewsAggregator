@@ -19,14 +19,18 @@ below).
 Capture triggers two ways, switched via a **Manual** toggle (top-left,
 default off = **Auto**):
 
-- **Auto** (default): capture fires automatically once every active gate
-  has held passing simultaneously for a few consecutive frames. The
-  shutter button is inert in this mode -- there's nothing for a manual
-  tap to add once the gates already require exactly what a manual tap
-  would.
+- **Auto** (default): once every active gate has held passing
+  simultaneously for a few consecutive frames, capture does **not**
+  fire instantly -- a self-timer-style 3-2-1 "get ready" countdown
+  starts first, canceling cleanly if the pose breaks before it
+  completes (see "Get-ready countdown" below). The shutter button is
+  inert in this mode -- there's nothing for a manual tap to add once
+  the gates already require exactly what a manual tap would.
 - **Manual**: gates become guidance only, same as earlier versions. The
   shutter button works any time a face is detected, regardless of gate
-  state, for a tester who wants a sample despite an imperfect pose.
+  state, fires instantly on tap (no countdown -- pressing the button is
+  itself the "I'm ready" signal), for a tester who wants a sample
+  despite an imperfect pose.
 
 A compact numeric readout (pitch/yaw/roll/MAR/smile width, hold count)
 sits below the prompt banner for anyone who wants the raw numbers
@@ -125,23 +129,29 @@ truth `X_SIGN` is supposed to track.
   a half-finished hold under the old gate set doesn't carry over.
 - **Manual** (top-left) switches between Auto and Manual capture
   triggering, see the intro above. Default: off (Auto).
-- **Debug** (top-left) reveals a small panel with two sliders that
-  adjust the distance gate's target range live (see "Gates: pose,
-  distance, and smile" below) without a redeploy -- a POC tuning tool,
-  not meant to ship visible by default in a real product.
+- **Debug** (top-left) reveals a small panel with sliders that adjust
+  the distance gate's target range and the get-ready countdown duration
+  live (see "Gates: pose, distance, and smile" and "Get-ready
+  countdown" below) without a redeploy -- a POC tuning tool, not meant
+  to ship visible by default in a real product.
 - Watch the Smart Frame outline and prompt banner. In Auto mode, once
   every active gate holds passing for `THRESHOLDS.holdFramesRequired`
-  consecutive frames, capture fires automatically. In Manual mode, tap
-  **Capture** any time a face is detected, regardless of gate state.
-- Capture grabs **three** uncompressed still candidates -- cropped to
-  the tracked mouth bounding box, pose/smile/card readout burned in,
-  ~120ms apart (long enough to cover a typical blink) -- starting
-  **immediately**, before anything else runs, so the first reflects the
-  exact frame that satisfied the gates rather than a frame from
-  hundreds of ms later (see "Zero-lag still capture" below for why this
-  ordering matters). All three are kept and each is scored, the
-  sharpest auto-flagged as the default (see "Video-first capture"
-  below). *Only after* all three grabs does it lock exposure/WB/focus at
+  consecutive frames, a get-ready countdown starts (see "Get-ready
+  countdown" below) -- capture does not fire until it completes, and
+  moving out of pose cancels it. In Manual mode, tap **Capture** any
+  time a face is detected, regardless of gate state, firing instantly
+  with no countdown.
+- Once capture actually starts (immediately after the countdown
+  completes, or immediately on tap in Manual mode), it grabs **three**
+  uncompressed still candidates -- cropped to the tracked mouth bounding
+  box, pose/smile/card readout burned in, ~120ms apart (long enough to
+  cover a typical blink) -- starting **immediately**, before anything
+  else in that sequence runs, so the first reflects the exact frame at
+  that instant rather than one from hundreds of ms later (see "Zero-lag
+  still capture" below for why this ordering matters). All three are
+  kept and each is scored, the sharpest auto-flagged as the default (see
+  "Video-first capture" below). *Only after* all three grabs does it
+  lock exposure/WB/focus at
   the *current* auto-computed values if the platform allows it
   (`src/capture/deviceCamera.ts` reads `track.getSettings()` before
   switching to manual, since switching without a value snaps some
@@ -192,6 +202,68 @@ existed:
   the config default when a caller doesn't supply its own
   `distanceRange` (every unit test included).
 - **`smile`**: unchanged, see "Smile detection" below.
+
+## Get-ready countdown: self-timer, not instant fire
+
+On-device feedback: auto-capture firing the instant gates aligned felt
+"unexpected and too aggressive" -- the entire gap between "pose happened
+to align" and the shutter firing was `THRESHOLDS.holdFramesRequired`
+frames, roughly **166ms** at ~30fps, with no perceptible warning. If the
+pose only lined up for a fleeting instant while the user was still
+adjusting (not actually ready), a bad capture fired anyway, and there
+was no way to back out of it mid-flight.
+
+Fixed by adopting a battle-tested camera pattern instead of inventing
+one: **self-timer / photo-booth 3-2-1 countdown**, the same pattern
+behind iOS Camera's timer, Photo Booth, and every "hold a pose" portrait
+auto-capture feature. This fits specifically because the task is
+"compose yourself, hold a pose, then fire" -- not an instant-recognition
+task like a QR scanner, where waiting has no benefit because the target
+is already static and final.
+
+- **Arming** (unchanged): gates must hold passing for
+  `holdFramesRequired` frames, same as before -- just a flicker-
+  debounce, not itself a user-facing cue.
+- **Counting down** (new, `src/gates/captureArmEvaluator.ts`): once
+  armed, a large centered numeral appears (`.countdown-numeral` in
+  `viewfinderScreen.ts`) and counts down over
+  `CAPTURE_ARM_DEFAULTS.durationMs` (default 3000ms, one tick per
+  second -- the standard shortest self-timer duration across mainstream
+  camera apps). The prompt banner shows "Hold that pose..." for the
+  duration, and each tick gets a short, distinct haptic pulse + tone
+  (`fireTickHaptic`/`playTickSound` in `main.ts`, deliberately
+  different from the final capture-confirm chime in
+  `captureSequence.ts` so a tick doesn't sound like the shutter).
+- **Cancel on movement**: if any gate fails at any point during the
+  countdown, it cancels immediately -- no capture, no penalty, a smooth
+  reset back to normal live guidance. This is the direct fix for "I can
+  keep moving and auto capture will be shit": moving now cancels
+  instead of forcing a bad shot. The cancellation rides on
+  `evaluateSmartFrame`'s existing hold-count reset (any gate failing
+  already resets `holdCount` to 0), so no duplicate gate-tracking state
+  was needed in the new module.
+- **Fire**: only once the full countdown completes with every gate still
+  holding does capture actually start, otherwise unchanged from before.
+
+The countdown numeral is a plain DOM element, not drawn on the tracking
+overlay canvas: the canvas gets a CSS mirror transform in front-camera
+mode, and while the existing direction-arrow logic correctly un-mirrors
+*arrows*, a canvas-drawn digit like "2" would render as a backwards,
+garbled glyph in that mirrored space rather than just repositioned -- a
+bug worth avoiding by construction. No background fill behind the
+numeral either, same "never cover the face" rule the rest of the
+capture feedback already follows (see "Capture feedback" below) -- bold
+text with a strong shadow carries contrast instead. The existing small
+hold-progress ring (`drawRing` in `overlay.ts`) is suppressed (forced to
+0, not removed) once the big numeral takes over, so the two don't
+visually compete.
+
+**The countdown duration is runtime-adjustable via the Debug panel**
+(same slider pattern as the distance-gate range), not just a fixed
+config guess -- 3000ms is a pattern-matched starting estimate, not yet
+validated against this app's on-device feel, and there's no way to
+determine the "right" duration without a real device, so a live dial
+was shipped instead of a guessed number.
 
 ## Video-first capture: three still candidates, not a scored burst
 
@@ -285,6 +357,13 @@ has been measured on a real device -- unverified, same caveat as
 everything else in this project.
 
 ## Capture feedback: visible countdown, never over the face
+
+This is a **different** countdown from the get-ready one above: that
+one runs *before* capture starts (big centered numeral, cancelable by
+moving out of pose); this one runs *during* capture, once it's already
+underway and can no longer be canceled -- the shutter button turning
+red and ticking down while the still candidates and video are actually
+being captured.
 
 Sound/haptics alone (`fireHaptics`/`playCaptureSound` in
 `captureSequence.ts`) were easy to miss, especially for auto-capture
@@ -499,6 +578,14 @@ operating the phone.
   (0.15-0.25) approximates 15-25cm but isn't calibrated against real
   captures -- runtime-adjustable via the Debug panel for exactly this
   reason. See "Gates: pose, distance, and smile" above.
+- **Get-ready countdown duration is a placeholder.**
+  `CAPTURE_ARM_DEFAULTS.durationMs` (3000ms) is a pattern-matched
+  guess (the standard shortest self-timer duration across mainstream
+  camera apps), not validated against this app's on-device feel --
+  same reason it's runtime-adjustable via the Debug panel rather than
+  presented as settled. Whether `holdFramesRequired` (still 5 frames,
+  now just the *entry* gate into this longer sequence) needs bumping
+  for stability is also unverified. See "Get-ready countdown" above.
 - **Resolved (partially): the still-image anchor has fallback frames
   again.** A single-frame-at-window-start design (no scoring, no
   fallback) briefly replaced the old best-of-15 approach as part of the
@@ -549,12 +636,18 @@ operating the phone.
   (MediaPipe, canvas encode) adds overhead, the on-screen countdown
   could drift slightly from when the capture sequence actually
   finishes. It's a UX cue, not a synchronization guarantee.
-- **The Manual/Auto toggle and Debug distance-range panel are
+- **The Manual/Auto toggle, Debug panel, and get-ready countdown are
   unverified visually on a real device.** Confirmed via the fake-camera
-  smoke test that nothing throws and the new elements render, same
-  caveat as every other UI change in this project (look/feel, touch
-  target sizing, and whether the now-five-wide `.top-bar-left` cluster
-  wraps sensibly on a small phone screen all need real-device eyes).
+  smoke test that nothing throws and the new elements render/toggle
+  (including the countdown-duration slider), but the fake camera never
+  reports a detected face, so no gate ever passes and the countdown
+  itself never actually runs in that test -- only its static wiring is
+  checked. Real-device unknowns: look/feel, touch target sizing,
+  whether the now-five-wide `.top-bar-left` cluster wraps sensibly on a
+  small phone screen, whether the countdown numeral's size/position/
+  contrast reads well against a live selfie feed in varying light,
+  and whether the tick tone/haptic is perceptible without being
+  annoying.
 - **Without-cardboard capture is now confirmed working on a real
   device** (live view, pose readout, smile detection all exercised
   against real photos), which is how the smile-metric and direction-
@@ -572,7 +665,13 @@ operating the phone.
   capture triggering, prompt priority and the 800ms minimum display
   lock) but not every hysteresis band exhaustively, and not ArUco
   detection accuracy itself (that's the vendored library's concern, not
-  this codebase's).
+  this codebase's). The get-ready countdown's own state machine
+  (`src/gates/captureArmEvaluator.ts`) has separate unit test coverage
+  (arm on the hold-reached edge, tick-boundary correctness, fire-exactly-
+  once, cancel-on-any-gate-failure including one frame before
+  completion, re-arm-restarts-from-the-top, and a live `durationMs`
+  change mid-countdown not crashing) -- the state-machine logic is
+  real-tested, only the *feel* of the chosen defaults is not.
 
 ## Architecture
 
@@ -587,7 +686,12 @@ Three-layer split:
 - `src/gates/` — Layer 2. `evaluateSmartFrame` in `smartFrameEvaluator.ts`
   is a pure function (no DOM access): same tracker result + card
   detection + cardboard-mode flag + prior state in, same evaluation out.
-  All tuning constants live in `src/config.ts`.
+  `evaluateCaptureArm` in `captureArmEvaluator.ts` is a second, sibling
+  pure function sitting downstream of it -- consumes `captureTriggered`/
+  `allPassed` each frame to run the get-ready countdown state machine
+  (idle/counting/fire/cancel), kept separate so `evaluateSmartFrame`
+  itself stays timing-agnostic. All tuning constants live in
+  `src/config.ts`.
 - `src/ui/` and `src/capture/` — Layer 3. Camera setup
   (`src/capture/deviceCamera.ts`, including the max-resolution
   negotiation), canvas overlay (Smart Frame outline + card guide,

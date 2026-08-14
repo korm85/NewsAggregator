@@ -117,6 +117,20 @@ try {
   await page.click('#cardboard-toggle');
   await page.waitForTimeout(300);
 
+  // Get-ready countdown numeral (captureArmEvaluator.ts): can't exercise
+  // it actually counting down here, the fake camera never reports a
+  // detected face so no gate ever passes (see README/TECHNICAL_SPEC.md
+  // caveats on this), but its wiring -- present, hidden by default, and
+  // the Debug-panel duration slider not crashing anything -- is checked.
+  const countdownHiddenInitially = await page.$eval('#countdown-numeral', (el) => el.classList.contains('hidden'));
+  console.log('[smoke] countdown numeral hidden by default:', countdownHiddenInitially);
+  await page.click('#debug-toggle-btn');
+  await page.fill('#capture-arm-duration-input', '4000');
+  await page.dispatchEvent('#capture-arm-duration-input', 'input');
+  await page.waitForTimeout(200);
+  await page.click('#debug-toggle-btn');
+  console.log('[smoke] capture-arm duration slider adjustable without crashing');
+
   // Fake camera devices don't report torch capability, so the flash
   // button should stay hidden; the switch-camera button should always
   // be visible and clicking it should not crash the app.

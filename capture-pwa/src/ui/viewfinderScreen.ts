@@ -16,6 +16,10 @@ export interface ViewfinderRefs {
   distanceMaxInput: HTMLInputElement;
   distanceMinValue: HTMLSpanElement;
   distanceMaxValue: HTMLSpanElement;
+  captureArmDurationInput: HTMLInputElement;
+  captureArmDurationValue: HTMLSpanElement;
+  /** Big self-timer-style numeral (3, 2, 1) shown while the get-ready countdown is counting down, see captureArmEvaluator.ts. A plain DOM element, not canvas-drawn -- see main.ts for why. */
+  countdownNumeral: HTMLDivElement;
 }
 
 export interface ViewfinderCallbacks {
@@ -27,24 +31,31 @@ export interface ViewfinderCallbacks {
   /** true = manual (gates are guidance only, button works whenever a face is detected); false = auto (default). */
   onToggleCaptureMode: (manual: boolean) => void;
   onDistanceRangeChange: (range: { min: number; max: number }) => void;
+  onCaptureArmDurationChange: (durationMs: number) => void;
 }
 
 const DISTANCE_SLIDER_MIN = 0.05;
 const DISTANCE_SLIDER_MAX = 0.6;
 const DISTANCE_SLIDER_STEP = 0.01;
 
+const CAPTURE_ARM_SLIDER_MIN_MS = 1000;
+const CAPTURE_ARM_SLIDER_MAX_MS = 6000;
+const CAPTURE_ARM_SLIDER_STEP_MS = 500;
+
 /**
  * `mirrored` is passed in rather than read from a static config
  * constant, since the camera (and therefore whether the preview should
  * be mirrored) can now change at runtime via the switch-camera button.
- * `distanceRangeDefaults` seeds the debug-panel sliders (see
- * config.ts DISTANCE_GATE_DEFAULTS); the UI layer never hardcodes a
- * tuning value itself.
+ * `distanceRangeDefaults`/`captureArmDurationDefaultMs` seed the
+ * debug-panel sliders (see config.ts DISTANCE_GATE_DEFAULTS /
+ * CAPTURE_ARM_DEFAULTS); the UI layer never hardcodes a tuning value
+ * itself.
  */
 export function renderViewfinderScreen(
   root: HTMLElement,
   mirrored: boolean,
   distanceRangeDefaults: { min: number; max: number },
+  captureArmDurationDefaultMs: number,
   callbacks: ViewfinderCallbacks,
 ): ViewfinderRefs {
   root.innerHTML = `
@@ -78,7 +89,13 @@ export function renderViewfinderScreen(
           Max <span id="distance-max-value"></span>
           <input type="range" id="distance-max-input" min="${DISTANCE_SLIDER_MIN}" max="${DISTANCE_SLIDER_MAX}" step="${DISTANCE_SLIDER_STEP}" />
         </label>
+        <div class="debug-panel-title">Get-ready countdown (seconds before capture fires)</div>
+        <label>
+          Countdown <span id="capture-arm-duration-value"></span>
+          <input type="range" id="capture-arm-duration-input" min="${CAPTURE_ARM_SLIDER_MIN_MS}" max="${CAPTURE_ARM_SLIDER_MAX_MS}" step="${CAPTURE_ARM_SLIDER_STEP_MS}" />
+        </label>
       </div>
+      <div class="countdown-numeral hidden" id="countdown-numeral"></div>
       <div class="prompt-banner none" id="prompt-banner"></div>
       <div class="live-readout" id="live-readout">Loading tracker...</div>
       <button class="shutter-btn" id="capture-btn">Capture</button>
@@ -133,12 +150,23 @@ export function renderViewfinderScreen(
     emitDistanceRange();
   };
 
+  const captureArmDurationInput = root.querySelector<HTMLInputElement>('#capture-arm-duration-input')!;
+  const captureArmDurationValue = root.querySelector<HTMLSpanElement>('#capture-arm-duration-value')!;
+  captureArmDurationInput.value = String(captureArmDurationDefaultMs);
+  captureArmDurationValue.textContent = `${(captureArmDurationDefaultMs / 1000).toFixed(1)}s`;
+  captureArmDurationInput.oninput = () => {
+    const ms = parseFloat(captureArmDurationInput.value);
+    captureArmDurationValue.textContent = `${(ms / 1000).toFixed(1)}s`;
+    callbacks.onCaptureArmDurationChange(ms);
+  };
+
   return {
     video: root.querySelector<HTMLVideoElement>('#capture-video')!,
     overlayCanvas: root.querySelector<HTMLCanvasElement>('#capture-overlay')!,
     liveReadout: root.querySelector<HTMLDivElement>('#live-readout')!,
     promptBanner: root.querySelector<HTMLDivElement>('#prompt-banner')!,
     sessionBadge: root.querySelector<HTMLDivElement>('#session-badge')!,
+    countdownNumeral: root.querySelector<HTMLDivElement>('#countdown-numeral')!,
     galleryButton,
     captureButton,
     switchCameraButton,
@@ -151,5 +179,7 @@ export function renderViewfinderScreen(
     distanceMaxInput,
     distanceMinValue,
     distanceMaxValue,
+    captureArmDurationInput,
+    captureArmDurationValue,
   };
 }

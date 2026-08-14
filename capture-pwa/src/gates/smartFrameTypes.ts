@@ -33,6 +33,15 @@ export interface SmartFrameEvaluation {
   gateStatuses: SmartFramePassingState;
   /** Only the gates active for this frame (see activeGateIds) count toward allPassed. */
   allPassed: boolean;
+  /**
+   * True exactly once: the frame `holdCount` first reaches
+   * `holdFramesRequired`. Despite the name, this no longer fires
+   * capture directly -- it's the one-shot signal that arms the
+   * self-timer-style get-ready countdown in captureArmEvaluator.ts,
+   * which decides if/when a capture should actually start (see its
+   * `fireNow`). Consumers that used to treat this as "fire now" should
+   * route through that module instead.
+   */
   captureTriggered: boolean;
   holdCount: number;
   holdRequired: number;
