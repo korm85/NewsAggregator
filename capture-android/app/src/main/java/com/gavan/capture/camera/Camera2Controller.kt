@@ -66,6 +66,10 @@ class Camera2Controller(private val context: Context) {
     var onAnalysisFrame: ((Bitmap, Long) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
 
+    /** The actual sensor-supported preview size chosen in open() -- never the raw view pixel size (see open()'s doc comment). Null until open() completes. */
+    var previewSize: Size? = null
+        private set
+
     val sensorOrientation: Int
         get() = characteristics?.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
 
@@ -88,8 +92,19 @@ class Camera2Controller(private val context: Context) {
      * tracker), and a JPEG still stream (max sensor resolution -- the
      * "uplifted" resolution ceiling a getUserMedia `ideal` hint can only
      * approximate, see deviceCamera.ts's pickMaxResolutionConstraints).
+     *
+     * `viewSizeHint` is NOT used as the buffer size -- Camera2 does not
+     * scale a SurfaceTexture's presented buffer to fit an arbitrary size;
+     * requesting the raw view's pixel dimensions (almost never a size the
+     * sensor actually supports) silently stretches the sensor's real
+     * output to fill it, which is what produced the distorted preview.
+     * Instead this picks an actually-supported size, and the caller
+     * (ViewfinderActivity) applies a center-crop transform on the
+     * TextureView -- matching the PWA's `object-fit: cover` on its
+     * <video> element (see capture-pwa/src/style.css) -- so scaling stays
+     * uniform (no stretch) and any excess is cropped, not squeezed.
      */
-    suspend fun open(facing: Facing, texture: SurfaceTexture, previewSize: Size) {
+    suspend fun open(facing: Facing, texture: SurfaceTexture, viewSizeHint: Size) {
         close()
 
         val cameraId = cameraIdFor(facing) ?: cameraIdFor(if (facing == Facing.FRONT) Facing.REAR else Facing.FRONT)
@@ -101,18 +116,31 @@ class Camera2Controller(private val context: Context) {
         val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             ?: throw IllegalStateException("Camera $cameraId exposes no stream configuration map")
 
-        texture.setDefaultBufferSize(previewSize.width, previewSize.height)
+        // Preview target: a supported SurfaceTexture output size close to
+        // 1280x720 (plenty for a viewfinder, keeps the transform math and
+        // GPU compositing cheap). The sensor's native output is landscape;
+        // the portrait-vs-landscape reconciliation happens entirely via
+        // rotation in the display transform / rotateBitmap, not here.
+        val previewSizes = map.getOutputSizes(SurfaceTexture::class.java)?.toList().orEmpty()
+        val chosenPreviewSize = pickClosestSize(previewSizes, targetWidth = 1280, targetHeight = 720)
+            ?: throw IllegalStateException("No SurfaceTexture output sizes for camera $cameraId")
+        previewSize = chosenPreviewSize
+
+        texture.setDefaultBufferSize(chosenPreviewSize.width, chosenPreviewSize.height)
         val preview = Surface(texture)
         previewSurface = preview
 
-        // Small analysis resolution: this feeds the per-frame face
-        // landmarker, not the saved image, so it favors tracking latency
-        // over pixel detail. Picking a supported YUV_420_888 size close
-        // to 480p, biased toward the smallest available at-or-above that
-        // floor, avoids IllegalArgumentException from requesting a size
-        // the sensor doesn't actually offer.
+        // Analysis resolution: matched to the SAME aspect ratio as the
+        // chosen preview size (not an independent fixed target) so the
+        // normalized landmark coordinates computed against this stream
+        // map onto the on-screen preview under the identical center-crop
+        // transform -- a mismatched aspect ratio here is what made the
+        // mouth box drift away from the actual mouth. Kept small (~480p
+        // floor) since this feeds the per-frame tracker, not the saved
+        // image, so it favors latency over pixel detail.
         val yuvSizes = map.getOutputSizes(ImageFormat.YUV_420_888)?.toList().orEmpty()
-        val analysisSize = pickClosestSize(yuvSizes, targetWidth = 480, targetHeight = 360)
+        val previewAspect = chosenPreviewSize.width.toDouble() / chosenPreviewSize.height
+        val analysisSize = pickClosestAspectSize(yuvSizes, previewAspect, minArea = 480 * 360)
             ?: throw IllegalStateException("No YUV_420_888 output sizes for camera $cameraId")
         val reader = ImageReader.newInstance(analysisSize.width, analysisSize.height, ImageFormat.YUV_420_888, 2)
         reader.setOnImageAvailableListener({ r -> handleAnalysisFrame(r) }, backgroundHandler)
@@ -183,6 +211,7 @@ class Camera2Controller(private val context: Context) {
             set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
             set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
             set(CaptureRequest.CONTROL_AE_LOCK, false)
+            set(CaptureRequest.CONTROL_AWB_LOCK, false)
         }
         repeatingRequestBuilder = builder
         session.setRepeatingRequest(builder.build(), null, backgroundHandler)
@@ -192,7 +221,15 @@ class Camera2Controller(private val context: Context) {
         val image = reader.acquireLatestImage() ?: return
         try {
             val bitmap = yuv420ToBitmap(image)
-            val rotated = rotateAndMirror(bitmap, sensorOrientation, isFrontFacing)
+            // Rotate to upright ONLY -- never pre-mirror the pixels fed to
+            // the tracker. The ported angle/direction math (X_SIGN in
+            // FaceLandmarkerTracker, matching mediapipeTracker.ts) was
+            // calibrated against raw, unmirrored camera-space landmarks;
+            // mirroring is purely a display-time transform (the PWA only
+            // ever CSS-mirrors the <video>/<canvas>, never the frames it
+            // feeds MediaPipe). Pre-mirroring here as well double-flipped
+            // the mouth box's handedness relative to what's on screen.
+            val rotated = rotateBitmap(bitmap, sensorOrientation)
             onAnalysisFrame?.invoke(rotated, System.currentTimeMillis())
         } catch (e: Exception) {
             onError?.invoke("Analysis frame conversion failed: ${e.message}")
@@ -202,15 +239,20 @@ class Camera2Controller(private val context: Context) {
     }
 
     /**
-     * Real AE lock via CONTROL_AE_LOCK on the live repeating request --
-     * unlike the PWA's tryLockCapture, this doesn't need to guess a
-     * manual exposureTime and hope the browser accepts it; the sensor
-     * just freezes at whatever it last converged to.
+     * Real AE+AWB lock via CONTROL_AE_LOCK/CONTROL_AWB_LOCK on the live
+     * repeating request -- unlike the PWA's tryLockCapture, this doesn't
+     * need to guess a manual exposureTime/colorTemperature and hope the
+     * browser accepts it; the sensor just freezes both at whatever they
+     * last converged to. Locking white balance alongside exposure matches
+     * what the PWA attempts (deviceCamera.ts locks both together too) --
+     * exposure-only locking here would actually be a regression against
+     * the PWA, not an improvement.
      */
     fun setAeLock(locked: Boolean) {
         val builder = repeatingRequestBuilder ?: return
         val session = captureSession ?: return
         builder.set(CaptureRequest.CONTROL_AE_LOCK, locked)
+        builder.set(CaptureRequest.CONTROL_AWB_LOCK, locked)
         session.setRepeatingRequest(builder.build(), null, backgroundHandler)
     }
 
@@ -253,6 +295,7 @@ class Camera2Controller(private val context: Context) {
             addTarget(reader.surface)
             set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
             set(CaptureRequest.CONTROL_AE_LOCK, repeatingRequestBuilder?.get(CaptureRequest.CONTROL_AE_LOCK) ?: false)
+            set(CaptureRequest.CONTROL_AWB_LOCK, repeatingRequestBuilder?.get(CaptureRequest.CONTROL_AWB_LOCK) ?: false)
             set(CaptureRequest.JPEG_ORIENTATION, jpegOrientation())
         }
         session.capture(builder.build(), object : CameraCaptureSession.CaptureCallback() {
@@ -326,6 +369,7 @@ class Camera2Controller(private val context: Context) {
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
                 set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
                 set(CaptureRequest.CONTROL_AE_LOCK, true)
+                set(CaptureRequest.CONTROL_AWB_LOCK, true)
             }
             repeatingRequestBuilder = builder
             captureSession?.setRepeatingRequest(builder.build(), null, backgroundHandler)
@@ -406,6 +450,24 @@ class Camera2Controller(private val context: Context) {
         }
 
         /**
+         * Picks the size whose aspect ratio is closest to `targetAspect`
+         * (width/height), breaking ties toward the smallest size at or
+         * above `minArea` -- used to keep the analysis stream's aspect
+         * ratio matched to the preview stream's, since normalized
+         * landmark coordinates only map correctly onto the displayed
+         * preview when both streams share the same aspect ratio.
+         */
+        private fun pickClosestAspectSize(sizes: List<Size>, targetAspect: Double, minArea: Int): Size? {
+            if (sizes.isEmpty()) return null
+            return sizes.minWithOrNull(
+                compareBy(
+                    { size -> kotlin.math.abs(size.width.toDouble() / size.height - targetAspect) },
+                    { size -> kotlin.math.abs(size.width.toLong() * size.height - minArea) },
+                ),
+            )
+        }
+
+        /**
          * YUV_420_888 -> NV21 -> JPEG -> Bitmap round trip. Not the
          * cheapest possible conversion (a direct RGB decode would avoid
          * the JPEG step), but it only needs to run against the small
@@ -469,10 +531,10 @@ class Camera2Controller(private val context: Context) {
             return nv21
         }
 
-        fun rotateAndMirror(bitmap: Bitmap, degrees: Int, mirror: Boolean): Bitmap {
-            val matrix = Matrix()
-            if (mirror) matrix.postScale(-1f, 1f)
-            matrix.postRotate(degrees.toFloat())
+        /** Rotates to upright only -- see handleAnalysisFrame's doc comment on why this must never also mirror. */
+        fun rotateBitmap(bitmap: Bitmap, degrees: Int): Bitmap {
+            if (degrees == 0) return bitmap
+            val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
             return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
         }
     }

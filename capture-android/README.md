@@ -32,6 +32,19 @@ If the native build's captures look sharper, better-exposed, or more
 consistent than the PWA's, this is why -- not a difference in the tracking
 or gate logic, which is a deliberate 1:1 port (see below).
 
+**Honest scope check**: the above is real but partial. `CONTROL_AE_LOCK`/
+`CONTROL_AWB_LOCK` freeze whatever auto-exposure/auto-white-balance last
+converged to -- genuinely more reliable than the PWA's capability-gated
+guess, but still not the same thing as true manual control. Camera2 also
+exposes, and this app does **not** yet use: manual ISO/shutter speed
+(`CONTROL_AE_MODE_OFF` + `SENSOR_EXPOSURE_TIME`/`SENSOR_SENSITIVITY`), RAW
+sensor capture (`ImageFormat.RAW_SENSOR`/DNG -- arguably Camera2's biggest
+advantage over any browser API), manual focus distance
+(`LENS_FOCUS_DISTANCE`), video stabilization, pinned frame-rate ranges, or
+Camera2 Extensions (night mode/HDR/additional physical lenses). Treat this
+as a first real step up from the PWA, not the ceiling of what Camera2 can
+do.
+
 ## What's a 1:1 port (not reimplemented, ported)
 
 To keep the comparison meaningful, the following came from `capture-pwa/`
@@ -103,13 +116,47 @@ should be treated as a first cut, not a finished product:
   frames (the YUV->Bitmap conversion path in `Camera2Controller.yuv420ToBitmap`
   in particular -- it's a standard NV21/JPEG round-trip, but unverified for
   correctness against actual sensor output on a specific device).
-- Sensor orientation / mirroring correctness (`rotateAndMirror`) across
-  different phone models -- `sensorOrientation` handling is implemented per
-  the standard Camera2 pattern but not confirmed visually.
 - UI layout on a real screen (touch targets, debug panel scroll behavior,
   countdown numeral placement).
 - Battery/thermal behavior of running Camera2 + MediaPipe GPU delegate +
   MediaRecorder concurrently.
+- The center-crop preview transform and rotation math below, fixed after
+  first-round device feedback but not yet re-verified on a device.
+
+### Fixed after first-round device feedback (unverified again until retested)
+
+The first APK sent for comparison had two real bugs, both now fixed in
+code but **not yet re-verified on a device**:
+
+1. **Distorted preview.** `Camera2Controller.open()` was calling
+   `texture.setDefaultBufferSize()` with the raw `TextureView`'s on-screen
+   pixel size -- almost never a size the sensor actually supports, so the
+   hardware silently stretched its native output to fill it. Fixed: the
+   preview size is now picked from the sensor's actual supported sizes
+   (`SCALER_STREAM_CONFIGURATION_MAP`), and `ViewfinderActivity.
+   applyPreviewTransform()` applies a center-crop `Matrix` to the
+   `TextureView` -- matching the PWA's `object-fit: cover` on its
+   `<video>` (`capture-pwa/src/style.css`) -- so scaling stays uniform and
+   any excess is cropped, never squeezed.
+2. **Mouth box not tracking the mouth.** The analysis frame fed to
+   MediaPipe was being pre-mirrored (`rotateAndMirror(..., isFrontFacing)`)
+   *and* the `OverlayView` displaying it was mirrored again via
+   `scaleX(-1)` -- a double mirror. Worse, the ported angle/direction math
+   (`X_SIGN` in `FaceLandmarkerTracker`) was calibrated against *raw,
+   unmirrored* camera-space landmarks (exactly like the PWA, which only
+   ever CSS-mirrors the `<video>`/`<canvas>`, never the frames fed to
+   MediaPipe). Fixed: the analysis bitmap is now rotated only, never
+   mirrored (`rotateBitmap`), and `OverlayView` maps normalized box
+   coordinates through the same center-crop scale/offset as the preview
+   transform above, instead of a naive `box.x * width` stretch mapping
+   that assumed the analysis frame and view shared an aspect ratio (they
+   didn't).
+
+Also closed while investigating: `Camera2Controller` was locking exposure
+(`CONTROL_AE_LOCK`) but never white balance (`CONTROL_AWB_LOCK`) -- an
+actual regression against the PWA, which locks both together in
+`tryLockCapture`. Both are now locked/unlocked together everywhere the
+app touches AE lock (preview, still capture, video recording).
 
 Treat the first real-device run as the actual start of testing, the same way
 the PWA's own thresholds (documented throughout `config.ts`) were tuned only

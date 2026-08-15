@@ -1,5 +1,7 @@
 package com.gavan.capture.ui
 
+import android.graphics.Matrix
+import android.graphics.RectF
 import android.graphics.SurfaceTexture
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -12,6 +14,7 @@ import android.util.Size
 import android.view.TextureView
 import android.view.View
 import android.widget.SeekBar
+import kotlin.math.max
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.gavan.capture.camera.Camera2Controller
@@ -104,7 +107,9 @@ class ViewfinderActivity : AppCompatActivity() {
             override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
                 openCamera(surface, width, height)
             }
-            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) = Unit
+            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+                applyPreviewTransform()
+            }
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean = true
             override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
         }
@@ -121,11 +126,61 @@ class ViewfinderActivity : AppCompatActivity() {
                 runOnUiThread {
                     binding.promptBanner.visibility = View.GONE
                     binding.torchBtn.visibility = if (camera.hasTorch()) View.VISIBLE else View.GONE
+                    applyPreviewTransform()
                 }
             } catch (e: Exception) {
                 runOnUiThread { binding.promptBanner.text = "Camera failed to start: ${e.message}" }
             }
         }
+    }
+
+    /**
+     * Center-crop ("object-fit: cover") transform matching the PWA's
+     * `.viewfinder video { object-fit: cover }` (capture-pwa/src/style.css)
+     * -- scales the sensor's actual preview buffer uniformly to fully
+     * cover the TextureView, cropping any excess, instead of the previous
+     * behavior of stretching an arbitrary buffer size to fit (the source
+     * of the reported distortion). The OverlayView is driven by the exact
+     * same scale/offset so the mouth box lines up with what's displayed.
+     */
+    private fun applyPreviewTransform() {
+        val previewSize = camera.previewSize ?: return
+        val viewWidth = binding.textureView.width
+        val viewHeight = binding.textureView.height
+        if (viewWidth == 0 || viewHeight == 0) return
+
+        val rotation = camera.sensorOrientation
+        val matrix = Matrix()
+        val viewRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
+        val bufferRect = RectF(0f, 0f, previewSize.height.toFloat(), previewSize.width.toFloat())
+        val centerX = viewRect.centerX()
+        val centerY = viewRect.centerY()
+
+        if (rotation == 90 || rotation == 270) {
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
+            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
+            val scale = max(viewHeight.toFloat() / previewSize.height, viewWidth.toFloat() / previewSize.width)
+            matrix.postScale(scale, scale, centerX, centerY)
+        }
+        matrix.postRotate(rotation.toFloat(), centerX, centerY)
+        binding.textureView.setTransform(matrix)
+
+        // Same "upright" dimensions and cover-scale math, applied to the
+        // overlay's coordinate mapping instead of a texture Matrix -- the
+        // analysis stream's aspect ratio is matched to previewSize's (see
+        // Camera2Controller.open), so this lines up regardless of the
+        // analysis stream's absolute pixel size.
+        val uprightWidth = if (rotation == 90 || rotation == 270) previewSize.height else previewSize.width
+        val uprightHeight = if (rotation == 90 || rotation == 270) previewSize.width else previewSize.height
+        val coverScale = max(viewWidth.toFloat() / uprightWidth, viewHeight.toFloat() / uprightHeight)
+        val scaledWidth = uprightWidth * coverScale
+        val scaledHeight = uprightHeight * coverScale
+        binding.overlayView.setContentTransform(
+            scaledWidth,
+            scaledHeight,
+            (viewWidth - scaledWidth) / 2f,
+            (viewHeight - scaledHeight) / 2f,
+        )
     }
 
     private fun onTrackerResult(result: TrackerResult) {
@@ -283,6 +338,7 @@ class ViewfinderActivity : AppCompatActivity() {
                 camera.open(currentFacing, texture, Size(binding.textureView.width, binding.textureView.height))
                 binding.torchBtn.visibility = if (camera.hasTorch()) View.VISIBLE else View.GONE
                 torchOn = false
+                applyPreviewTransform()
             } catch (e: Exception) {
                 binding.promptBanner.text = "Camera switch failed: ${e.message}"
                 binding.promptBanner.visibility = View.VISIBLE

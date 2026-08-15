@@ -31,6 +31,29 @@ class OverlayView @JvmOverloads constructor(
     var arrowDirection: ArrowDirection? = null
     var ringProgress: Float = 0f
 
+    /**
+     * Maps the tracker's normalized (0-1) coordinates -- relative to the
+     * upright analysis frame -- onto this view's pixel space under the
+     * same center-crop ("object-fit: cover") transform applied to the
+     * TextureView (see ViewfinderActivity.applyPreviewTransform). Without
+     * this, drawing box.x * width directly assumes a 1:1 stretch mapping,
+     * which is wrong whenever the analysis frame's aspect ratio differs
+     * from this view's -- exactly what made the mouth box drift off the
+     * actual mouth. Defaults to an identity mapping (scale = view size,
+     * no offset) until the first real transform arrives.
+     */
+    private var scaledContentWidth: Float = 0f
+    private var scaledContentHeight: Float = 0f
+    private var contentOffsetX: Float = 0f
+    private var contentOffsetY: Float = 0f
+
+    fun setContentTransform(scaledWidth: Float, scaledHeight: Float, offsetX: Float, offsetY: Float) {
+        scaledContentWidth = scaledWidth
+        scaledContentHeight = scaledHeight
+        contentOffsetX = offsetX
+        contentOffsetY = offsetY
+    }
+
     private val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 6f
@@ -64,11 +87,16 @@ class OverlayView @JvmOverloads constructor(
         }
 
         if (box != null) {
+            // Fall back to a plain width/height stretch if no transform
+            // has been set yet (e.g. the very first frames before the
+            // camera reports its chosen preview size).
+            val contentW = if (scaledContentWidth > 0f) scaledContentWidth else width.toFloat()
+            val contentH = if (scaledContentHeight > 0f) scaledContentHeight else height.toFloat()
             val rect = RectF(
-                (box.x * width).toFloat(),
-                (box.y * height).toFloat(),
-                ((box.x + box.w) * width).toFloat(),
-                ((box.y + box.h) * height).toFloat(),
+                contentOffsetX + (box.x * contentW).toFloat(),
+                contentOffsetY + (box.y * contentH).toFloat(),
+                contentOffsetX + ((box.x + box.w) * contentW).toFloat(),
+                contentOffsetY + ((box.y + box.h) * contentH).toFloat(),
             )
             canvas.drawRoundRect(rect, 16f, 16f, boxPaint)
 
