@@ -166,7 +166,7 @@ class ViewfinderActivity : AppCompatActivity() {
         val viewHeight = binding.textureView.height
         if (viewWidth == 0 || viewHeight == 0) return
 
-        val rotationDeg = camera.sensorOrientation
+        val rotationDeg = camera.effectiveRotationDegrees
         val bufferWidth = previewSize.width.toFloat()
         val bufferHeight = previewSize.height.toFloat()
         val viewW = viewWidth.toFloat()
@@ -304,6 +304,11 @@ class ViewfinderActivity : AppCompatActivity() {
         binding.switchCameraBtn.setOnClickListener { switchCamera() }
         binding.debugBtn.setOnClickListener {
             binding.debugPanel.visibility = if (binding.debugPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+        binding.rotatePreviewBtn.setOnClickListener {
+            camera.rotationOffsetDegrees = (camera.rotationOffsetDegrees + 90) % 360
+            applyPreviewTransform()
+            binding.debugReadout.text = "rotation offset ${camera.rotationOffsetDegrees}°"
         }
 
         binding.distanceMinSeek.progress = (distanceRange.min * 200).toInt()

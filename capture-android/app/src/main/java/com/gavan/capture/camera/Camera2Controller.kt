@@ -73,6 +73,21 @@ class Camera2Controller(private val context: Context) {
     val sensorOrientation: Int
         get() = characteristics?.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
 
+    /**
+     * Manual correction on top of `sensorOrientation`, in 90-degree
+     * steps, settable via the viewfinder's debug panel. Exists because
+     * the auto-derived rotation (sensorOrientation alone) has been wrong
+     * on real hardware more than once already -- rather than ship a
+     * fourth blind guess at the exact formula, this lets whoever is
+     * holding the device fix it directly and immediately, with tracking
+     * staying aligned to the same correction (see effectiveRotationDegrees,
+     * used by both the preview transform and the analysis-frame rotation).
+     */
+    var rotationOffsetDegrees: Int = 0
+
+    val effectiveRotationDegrees: Int
+        get() = ((sensorOrientation + rotationOffsetDegrees) % 360 + 360) % 360
+
     val isFrontFacing: Boolean
         get() = characteristics?.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
 
@@ -229,7 +244,7 @@ class Camera2Controller(private val context: Context) {
             // ever CSS-mirrors the <video>/<canvas>, never the frames it
             // feeds MediaPipe). Pre-mirroring here as well double-flipped
             // the mouth box's handedness relative to what's on screen.
-            val rotated = rotateBitmap(bitmap, sensorOrientation)
+            val rotated = rotateBitmap(bitmap, effectiveRotationDegrees)
             onAnalysisFrame?.invoke(rotated, System.currentTimeMillis())
         } catch (e: Exception) {
             onError?.invoke("Analysis frame conversion failed: ${e.message}")
@@ -311,11 +326,12 @@ class Camera2Controller(private val context: Context) {
 
     private fun jpegOrientation(): Int {
         // Device is locked portrait (see AndroidManifest); JPEG_ORIENTATION
-        // wants the rotation needed to make the image upright relative to
-        // the sensor's natural orientation, mirrored for the front camera
-        // the same way the display preview is (see MIRRORED in Config.kt).
-        val orientation = sensorOrientation
-        return if (isFrontFacing) (orientation + 0) % 360 else orientation
+        // wants the rotation needed to make the image upright. Uses the
+        // same effectiveRotationDegrees (sensorOrientation + any manual
+        // debug-panel correction) as the live preview/tracker, so a saved
+        // still/video matches whatever the user is actually seeing on
+        // screen rather than silently reverting to the uncorrected value.
+        return effectiveRotationDegrees
     }
 
     /**

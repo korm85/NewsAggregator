@@ -171,8 +171,28 @@ actually pointed. Replaced with a directly-derived, traceable 3-step
 pipeline in `ViewfinderActivity.applyPreviewTransform` (undo TextureView's
 default stretch -> rotate clockwise by `SENSOR_ORIENTATION` -> uniform
 cover-scale) instead of adapting borrowed matrix algebra -- see that
-method's doc comment for the full derivation. Still unverified on a real
-device.
+method's doc comment for the full derivation.
+
+### Third round: still wrong, so this is now manually correctable
+
+The re-derived rotation was tested on-device and was **still** wrong --
+this exact matrix (a buffer rotation combined with a display-time mirror
+via `View.scaleX`) is a well-known trap; getting `SENSOR_ORIENTATION`'s
+exact clockwise/counterclockwise interaction with the front camera's
+separate mirror transform right by pure derivation, with no device to
+check against, has now failed three times in three different ways. Rather
+than ship a fourth blind guess, `Camera2Controller.rotationOffsetDegrees`
+adds a manual 90-degree-step correction on top of the auto-derived value,
+exposed as a "Rotate 90°" button in the viewfinder's debug panel
+(`ViewfinderActivity`'s `rotate_preview_btn`). Both the live preview
+transform and the analysis bitmap fed to the face tracker read the same
+`Camera2Controller.effectiveRotationDegrees` (`sensorOrientation +
+rotationOffsetDegrees`), so tapping the button corrects the mouth-box
+tracking alignment together with the display -- they were misaligned
+from the same root cause, not two independent bugs. Saved
+stills/video also pick up the same correction via `jpegOrientation()`.
+Tap the button until the preview looks upright; there is no need to wait
+on another round-trip for this specific problem going forward.
 
 Treat the first real-device run as the actual start of testing, the same way
 the PWA's own thresholds (documented throughout `config.ts`) were tuned only

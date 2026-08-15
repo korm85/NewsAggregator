@@ -181,6 +181,18 @@
                 android:max="5000" />
 
             <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Preview orientation wrong? Rotate it manually:"
+                android:textColor="@color/onSurface" />
+            <Button
+                android:id="@+id/rotate_preview_btn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Rotate 90°" />
+
+            <TextView
                 android:id="@+id/debug_readout"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
