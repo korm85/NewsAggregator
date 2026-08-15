@@ -227,6 +227,31 @@ If the preview is still wrong after this change, that's new information
 (a CameraX-level issue, or something specific to the test device), not the
 same bug persisting.
 
+**Round 4 result: the CameraX migration fixed the preview/tracking problem.**
+On-device feedback confirmed live preview and mouth-box tracking both work
+correctly now -- auto-capture fires, gates track properly, images save. A
+narrower, different bug then showed up one layer downstream: saved still
+photos appeared sideways in the gallery. Root cause and fix:
+
+`ImageCapture.takePicture()` has two variants. The file-writing variant
+(`OutputFileOptions` + `OnImageSavedCallback`) bakes correct orientation
+into the saved JPEG automatically. `CaptureSequence` needs the in-memory
+variant instead (`OnImageCapturedCallback`) specifically because it scores
+3 still candidates before picking the best one, and that variant does
+**not** auto-orient -- it hands back raw sensor-orientation bytes and
+expects the caller to apply `ImageProxy.imageInfo.rotationDegrees` itself.
+`CameraXController.captureStillJpeg` wasn't doing that, so saved stills
+inherited the sensor's raw (landscape) orientation. Fixed in
+`CameraXController.reorientJpeg`: decode, rotate by `rotationDegrees`
+(the same `rotateBitmap` helper already used for analysis frames), and
+re-encode once at capture time, so every downstream consumer (gallery
+thumbnail, any future full-screen viewer) gets already-correct pixels
+without needing to be EXIF-aware.
+
+Video recording (`VideoCapture<Recorder>`) is unaffected by this --
+CameraX's `Recorder` writes orientation metadata into the MP4 container
+automatically and reliably, unlike the raw in-memory JPEG path.
+
 Treat the first real-device run against this CameraX version as the actual
 start of testing, the same way the PWA's own thresholds (documented
 throughout `config.ts`) were tuned only after on-device feedback, not

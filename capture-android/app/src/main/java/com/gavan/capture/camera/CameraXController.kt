@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.hardware.camera2.CaptureRequest
 import android.util.Size
@@ -26,6 +27,7 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -204,7 +206,20 @@ class CameraXController(private val context: Context) {
                         val buffer = image.planes[0].buffer
                         val bytes = ByteArray(buffer.remaining())
                         buffer.get(bytes)
-                        cont.resume(bytes)
+                        // Unlike the file-writing takePicture(OutputFileOptions,
+                        // OnImageSavedCallback) variant, this in-memory
+                        // OnImageCapturedCallback path does NOT bake orientation
+                        // into the JPEG -- it hands back raw sensor-orientation
+                        // bytes and expects the caller to apply
+                        // imageInfo.rotationDegrees. This path is used (instead
+                        // of the file-writing one) specifically so the 3 still
+                        // candidates can be scored in memory before one is kept
+                        // (see CaptureSequence), so the rotation has to be
+                        // applied here explicitly -- this was missing, which is
+                        // why saved stills came out sideways in the gallery.
+                        val rotationDegrees = image.imageInfo.rotationDegrees
+                        val oriented = if (rotationDegrees != 0) reorientJpeg(bytes, rotationDegrees) else bytes
+                        cont.resume(oriented)
                     } finally {
                         image.close()
                     }
@@ -289,6 +304,22 @@ class CameraXController(private val context: Context) {
             }
         }
         return videoOutputFile
+    }
+
+    /**
+     * Bakes `rotationDegrees` into the JPEG's actual pixels once, at
+     * capture time, so every downstream consumer (gallery thumbnail, any
+     * future full-screen viewer) just works without needing to be
+     * EXIF-aware -- see captureStillJpeg's doc comment on why this can't
+     * rely on CameraX's usual auto-orientation (that only happens in the
+     * file-writing takePicture variant, not this in-memory one).
+     */
+    private fun reorientJpeg(jpegBytes: ByteArray, rotationDegrees: Int): ByteArray {
+        val bitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size) ?: return jpegBytes
+        val rotated = rotateBitmap(bitmap, rotationDegrees)
+        val out = ByteArrayOutputStream()
+        rotated.compress(Bitmap.CompressFormat.JPEG, 95, out)
+        return out.toByteArray()
     }
 
     /** Maps a requested capture size to CameraX's discrete Quality tiers, favoring the tier that covers the request. */
