@@ -1,0 +1,649 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --text: #f1f5f9;
+  --muted: #94a3b8;
+  --accent: #2dd4bf;
+  --green: #22c55e;
+  --amber: #f59e0b;
+  --danger: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overscroll-behavior: none;
+}
+
+#app {
+  height: 100dvh;
+  width: 100vw;
+  position: relative;
+  overflow: hidden;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  gap: 16px;
+}
+
+.screen h1 {
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+.screen p {
+  color: var(--muted);
+  margin: 0;
+  max-width: 32ch;
+  line-height: 1.5;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #06231f;
+  border: none;
+  border-radius: 999px;
+  padding: 14px 28px;
+  font-size: 1rem;
+  font-weight: 600;
+  min-width: 200px;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid #475569;
+  border-radius: 999px;
+  padding: 12px 24px;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.viewfinder {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  overflow: hidden;
+}
+
+.viewfinder video,
+.viewfinder canvas.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.viewfinder.mirrored video,
+.viewfinder.mirrored canvas.overlay {
+  transform: scaleX(-1);
+}
+
+.live-readout {
+  position: absolute;
+  top: max(108px, calc(env(safe-area-inset-top) + 100px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  background: rgba(15, 23, 42, 0.78);
+  border: 2px solid var(--amber);
+  border-radius: 14px;
+  padding: 10px 16px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  white-space: pre;
+  text-align: left;
+  color: var(--text);
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.live-readout.optimal {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.live-readout.none {
+  border-color: var(--muted);
+  color: var(--muted);
+}
+
+.shutter-btn {
+  position: absolute;
+  bottom: max(28px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  border: 4px solid rgba(255, 255, 255, 0.85);
+  background: var(--accent);
+  color: #06231f;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.shutter-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/**
+ * Capture feedback lives on the shutter button itself (turns red and
+ * counts down, then flashes green on success) rather than a separate
+ * overlay: a full-screen dimmed card covering the whole ~5.5s capture
+ * window was tried first, but on-device that hid the user's own face
+ * for the entire capture -- the one thing that should never happen
+ * during a "smile capture" app. Movement guidance during the countdown
+ * reuses the existing small .prompt-banner instead, so the live
+ * preview stays fully visible throughout.
+ */
+.shutter-btn.recording {
+  background: var(--danger);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.85);
+  font-size: 1.3rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.shutter-btn.captured {
+  background: var(--green);
+  color: #06231f;
+}
+
+.top-bar,
+.top-bar-left {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: calc(100vw - 24px);
+}
+
+.top-bar {
+  right: max(12px, env(safe-area-inset-right));
+}
+
+.top-bar-left {
+  left: max(12px, env(safe-area-inset-left));
+}
+
+.top-bar button,
+.top-bar-left button {
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text);
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+}
+
+.top-bar button.hidden,
+.top-bar-left button.hidden {
+  display: none;
+}
+
+.top-bar-left button.active {
+  background: var(--accent);
+  color: #06231f;
+  font-weight: 600;
+}
+
+.top-bar-left button:disabled,
+.top-bar button:disabled {
+  opacity: 0.5;
+}
+
+.cardboard-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cardboard-toggle input {
+  margin: 0;
+}
+
+/**
+ * POC-only tuning panel for the runtime-adjustable distance gate (see
+ * config.ts DISTANCE_GATE_DEFAULTS): hidden by default, revealed by the
+ * "Debug" button in .top-bar-left, so it never gets in the way of a
+ * normal capture session.
+ */
+.debug-panel {
+  position: absolute;
+  top: max(56px, calc(env(safe-area-inset-top) + 48px));
+  left: max(12px, env(safe-area-inset-left));
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  padding: 12px 16px;
+  width: min(80vw, 280px);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.debug-panel.hidden {
+  display: none;
+}
+
+.debug-panel-title {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.debug-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.debug-panel input[type='range'] {
+  width: 100%;
+}
+
+.prompt-banner {
+  position: absolute;
+  top: max(56px, calc(env(safe-area-inset-top) + 48px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid var(--amber);
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text);
+  max-width: min(80vw, 360px);
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.prompt-banner.green {
+  border-color: var(--green);
+  background: rgba(15, 61, 46, 0.85);
+}
+
+.prompt-banner.none {
+  display: none;
+}
+
+/**
+ * Self-timer-style "get ready" countdown numeral (3, 2, 1), shown while
+ * captureArmEvaluator.ts's phase is 'counting'. Deliberately a plain
+ * DOM element positioned over the video, not drawn on the tracking
+ * overlay canvas -- see the doc comment on ViewfinderRefs.countdownNumeral
+ * in viewfinderScreen.ts for why (the canvas gets CSS-mirrored in
+ * front-camera mode, which would render digits backwards). No
+ * background fill, same "never cover the face" constraint as the rest
+ * of the capture feedback (see .shutter-btn.recording): a bold outline/
+ * shadow carries contrast instead of an opaque box.
+ */
+.countdown-numeral {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  font-size: clamp(96px, 32vw, 160px);
+  font-weight: 800;
+  color: #ffffff;
+  text-shadow: 0 0 12px rgba(0, 0, 0, 0.85), 0 0 32px rgba(0, 0, 0, 0.6);
+  -webkit-text-stroke: 2px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  user-select: none;
+}
+
+.countdown-numeral.hidden {
+  display: none;
+}
+
+.session-badge {
+  position: absolute;
+  top: max(56px, calc(env(safe-area-inset-top) + 48px));
+  left: max(12px, env(safe-area-inset-left));
+  z-index: 4;
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+}
+
+.session-badge.hidden {
+  display: none;
+}
+
+.result-image-wrap {
+  width: min(90vw, 420px);
+  aspect-ratio: 4 / 3;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;
+}
+
+.result-image-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.video-wrap {
+  width: min(90vw, 420px);
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;
+}
+
+.video-wrap video {
+  width: 100%;
+  display: block;
+}
+
+.video-meta {
+  width: min(90vw, 420px);
+  text-align: left;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: -8px;
+}
+
+.metadata {
+  width: min(90vw, 420px);
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 14px 18px;
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.metadata div {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+
+.metadata span:last-child {
+  color: var(--text);
+}
+
+.actions-row {
+  display: flex;
+  gap: 12px;
+}
+
+.gallery-screen {
+  height: 100dvh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.gallery-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(16px, env(safe-area-inset-top)) 16px 12px;
+  gap: 12px;
+}
+
+.gallery-header h1 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.gallery-grid {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  padding: 0 16px 24px;
+}
+
+.gallery-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  text-align: center;
+  padding: 24px;
+}
+
+.gallery-thumb {
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease;
+}
+
+.gallery-thumb:active {
+  transform: scale(0.96);
+}
+
+.gallery-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/** Non-technical only: a video icon when a clip was captured alongside the still, nothing raw/numeric in the grid. */
+.gallery-thumb .thumb-video-badge {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  background: rgba(15, 23, 42, 0.75);
+  color: var(--text);
+  font-size: 0.75rem;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/** How many still candidates were saved for this capture (see captureSequence.ts CAPTURE_SEQUENCE.stillFrameCount). Separate corner from the video badge so both can show at once. */
+.gallery-thumb .thumb-count-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  background: rgba(15, 23, 42, 0.75);
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 700;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/**
+ * All still candidates from a capture (see captureSequence.ts), shown
+ * as a horizontally-scrolling strip below the main lightbox image so
+ * nothing captured is hidden from review, even though only one
+ * (auto-picked as sharpest) is what Save/Delete act on.
+ */
+.still-candidates {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px;
+  width: min(90vw, 420px);
+}
+
+.still-candidate-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 72px;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  background: #000;
+}
+
+.still-candidate-thumb.best {
+  border-color: var(--green);
+}
+
+.still-candidate-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.still-candidate-thumb .best-badge {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: var(--green);
+  color: #06231f;
+  font-size: 0.6rem;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.still-candidates-caption {
+  width: min(90vw, 420px);
+  text-align: left;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: -4px;
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  z-index: 10;
+  overflow-y: auto;
+  padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+}
+
+.lightbox-content {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.lightbox-close-x {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 11;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(15, 23, 42, 0.75);
+  color: var(--text);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lightbox-date {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.capture-details {
+  width: min(90vw, 420px);
+}
+
+.capture-details summary {
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: center;
+  list-style: none;
+  padding: 6px 0;
+}
+
+.capture-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.capture-details summary::after {
+  content: '\25BE Capture details';
+}
+
+.capture-details[open] summary::after {
+  content: '\25B4 Hide details';
+}
+
+.capture-details .metadata {
+  margin-top: 8px;
+}
+
+.debug-readout {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(15, 23, 42, 0.85);
+  padding: 12px 16px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  white-space: pre-line;
+  z-index: 3;
+}
