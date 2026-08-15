@@ -158,6 +158,22 @@ actual regression against the PWA, which locks both together in
 `tryLockCapture`. Both are now locked/unlocked together everywhere the
 app touches AE lock (preview, still capture, video recording).
 
+### Second round: preview rotation ("confused what direction it points to")
+
+The center-crop transform above initially reused a hand-adapted version
+of the classic Camera2Basic sample's `configureTransform` matrix math --
+and mismatched which buffer dimension paired with which view dimension
+in the cover-scale calculation, on top of rotating by the wrong basis
+entirely (sensor orientation degrees fed into a formula meant for a
+display-rotation index). Net effect: the preview wasn't just cropped
+oddly, it was rotated wrong, making it unclear which way the camera
+actually pointed. Replaced with a directly-derived, traceable 3-step
+pipeline in `ViewfinderActivity.applyPreviewTransform` (undo TextureView's
+default stretch -> rotate clockwise by `SENSOR_ORIENTATION` -> uniform
+cover-scale) instead of adapting borrowed matrix algebra -- see that
+method's doc comment for the full derivation. Still unverified on a real
+device.
+
 Treat the first real-device run as the actual start of testing, the same way
 the PWA's own thresholds (documented throughout `config.ts`) were tuned only
 after on-device feedback, not assumed correct from the start.

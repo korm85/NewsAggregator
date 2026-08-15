@@ -1,7 +1,6 @@
 package com.gavan.capture.ui
 
 import android.graphics.Matrix
-import android.graphics.RectF
 import android.graphics.SurfaceTexture
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -136,12 +135,30 @@ class ViewfinderActivity : AppCompatActivity() {
 
     /**
      * Center-crop ("object-fit: cover") transform matching the PWA's
-     * `.viewfinder video { object-fit: cover }` (capture-pwa/src/style.css)
-     * -- scales the sensor's actual preview buffer uniformly to fully
-     * cover the TextureView, cropping any excess, instead of the previous
-     * behavior of stretching an arbitrary buffer size to fit (the source
-     * of the reported distortion). The OverlayView is driven by the exact
-     * same scale/offset so the mouth box lines up with what's displayed.
+     * `.viewfinder video { object-fit: cover }` (capture-pwa/src/style.css).
+     * Derived directly in three traceable steps rather than adapted from
+     * the classic (notoriously easy to get subtly wrong) Camera2Basic
+     * sample transform -- an earlier version of this method mismatched
+     * which buffer dimension paired with which view dimension in the
+     * cover-scale calculation, producing a wrongly-rotated/misoriented
+     * preview ("confused what direction it points to").
+     *
+     * TextureView's default behavior with NO transform set is to stretch
+     * whatever buffer it receives to exactly fill the view's bounds, with
+     * no rotation. `CameraCharacteristics.SENSOR_ORIENTATION` is the
+     * angle the raw sensor buffer needs to be rotated CLOCKWISE to appear
+     * upright when the device is in its natural orientation (portrait,
+     * for every phone this targets -- the app is locked to portrait, see
+     * AndroidManifest). So, starting from that default stretched state:
+     *
+     * 1. Undo the default non-uniform stretch, so the buffer occupies its
+     *    own true sensor-native aspect ratio (landscape), centered.
+     * 2. Rotate it clockwise by sensorOrientation degrees to make it
+     *    upright (`Matrix.postRotate`'s positive degrees are clockwise,
+     *    matching SENSOR_ORIENTATION's own documented direction).
+     * 3. Uniformly scale (same factor both axes, so no distortion) so
+     *    the now-upright content fully covers the view, cropping any
+     *    excess rather than leaving gaps.
      */
     private fun applyPreviewTransform() {
         val previewSize = camera.previewSize ?: return
@@ -149,30 +166,29 @@ class ViewfinderActivity : AppCompatActivity() {
         val viewHeight = binding.textureView.height
         if (viewWidth == 0 || viewHeight == 0) return
 
-        val rotation = camera.sensorOrientation
-        val matrix = Matrix()
-        val viewRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-        val bufferRect = RectF(0f, 0f, previewSize.height.toFloat(), previewSize.width.toFloat())
-        val centerX = viewRect.centerX()
-        val centerY = viewRect.centerY()
+        val rotationDeg = camera.sensorOrientation
+        val bufferWidth = previewSize.width.toFloat()
+        val bufferHeight = previewSize.height.toFloat()
+        val viewW = viewWidth.toFloat()
+        val viewH = viewHeight.toFloat()
+        val centerX = viewW / 2f
+        val centerY = viewH / 2f
 
-        if (rotation == 90 || rotation == 270) {
-            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
-            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
-            val scale = max(viewHeight.toFloat() / previewSize.height, viewWidth.toFloat() / previewSize.width)
-            matrix.postScale(scale, scale, centerX, centerY)
-        }
-        matrix.postRotate(rotation.toFloat(), centerX, centerY)
+        val matrix = Matrix()
+        matrix.setScale(bufferWidth / viewW, bufferHeight / viewH, centerX, centerY)
+        matrix.postRotate(rotationDeg.toFloat(), centerX, centerY)
+
+        val uprightWidth = if (rotationDeg == 90 || rotationDeg == 270) bufferHeight else bufferWidth
+        val uprightHeight = if (rotationDeg == 90 || rotationDeg == 270) bufferWidth else bufferHeight
+        val coverScale = max(viewW / uprightWidth, viewH / uprightHeight)
+        matrix.postScale(coverScale, coverScale, centerX, centerY)
         binding.textureView.setTransform(matrix)
 
-        // Same "upright" dimensions and cover-scale math, applied to the
-        // overlay's coordinate mapping instead of a texture Matrix -- the
-        // analysis stream's aspect ratio is matched to previewSize's (see
+        // Same upright dimensions + cover-scale, applied to the overlay's
+        // coordinate mapping instead of a texture Matrix -- the analysis
+        // stream's aspect ratio is matched to previewSize's (see
         // Camera2Controller.open), so this lines up regardless of the
         // analysis stream's absolute pixel size.
-        val uprightWidth = if (rotation == 90 || rotation == 270) previewSize.height else previewSize.width
-        val uprightHeight = if (rotation == 90 || rotation == 270) previewSize.width else previewSize.height
-        val coverScale = max(viewWidth.toFloat() / uprightWidth, viewHeight.toFloat() / uprightHeight)
         val scaledWidth = uprightWidth * coverScale
         val scaledHeight = uprightHeight * coverScale
         binding.overlayView.setContentTransform(
