@@ -72,6 +72,27 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
+    // CameraX: still Camera2 underneath (it's Google's official wrapper
+    // directly on top of Camera2, not a lesser/replacement API) -- but
+    // delegates preview sizing/scaling/rotation to PreviewView +
+    // ImageAnalysis's own reported rotationDegrees instead of hand-derived
+    // Matrix math, which got the rotation/distortion wrong on real
+    // hardware three separate times (see git history on the now-removed
+    // Camera2Controller.kt). camera-camera2 brings Camera2Interop, which
+    // is how CONTROL_AE_LOCK/CONTROL_AWB_LOCK stay real CaptureRequest
+    // keys rather than regressing to getUserMedia-style guessing.
+    // Pinned to 1.3.4, not the latest stable (1.6.x): newer CameraX
+    // releases require compileSdk 36 + AGP 8.9+, which would drag the
+    // whole toolchain along for no functional benefit here. 1.3.4 has
+    // everything this app uses (PreviewView, ImageAnalysis RGBA output,
+    // ImageCapture, VideoCapture/Recorder, Camera2Interop).
+    val cameraXVersion = "1.3.4"
+    implementation("androidx.camera:camera-core:$cameraXVersion")
+    implementation("androidx.camera:camera-camera2:$cameraXVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
+    implementation("androidx.camera:camera-view:$cameraXVersion")
+    implementation("androidx.camera:camera-video:$cameraXVersion")
+
     // Room: on-device capture metadata store, schema mirrors
     // capture-pwa/src/storage/captureStore.ts's IndexedDB record.
     implementation("androidx.room:room-runtime:2.6.1")

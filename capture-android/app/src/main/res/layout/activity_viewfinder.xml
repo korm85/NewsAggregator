@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg">
 
-    <TextureView
-        android:id="@+id/texture_view"
+    <androidx.camera.view.PreviewView
+        android:id="@+id/preview_view"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        app:scaleType="fillCenter" />
 
     <com.gavan.capture.ui.OverlayView
         android:id="@+id/overlay_view"
@@ -179,18 +181,6 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:max="5000" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Preview orientation wrong? Rotate it manually:"
-                android:textColor="@color/onSurface" />
-            <Button
-                android:id="@+id/rotate_preview_btn"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Rotate 90°" />
 
             <TextView
                 android:id="@+id/debug_readout"

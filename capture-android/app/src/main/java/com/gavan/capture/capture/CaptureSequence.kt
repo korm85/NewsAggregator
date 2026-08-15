@@ -7,7 +7,7 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import com.gavan.capture.camera.Camera2Controller
+import com.gavan.capture.camera.CameraXController
 import com.gavan.capture.config.CaptureSequenceConfig
 import com.gavan.capture.config.TARGET_VIDEO_BITRATE_BPS
 import com.gavan.capture.tracker.MouthBox
@@ -48,9 +48,10 @@ data class CaptureResult(
  * Video-first "Active Sweep" capture, mirroring
  * capture-pwa/src/capture/captureSequence.ts: grab still candidates
  * first (no delay), THEN lock exposure + settle, THEN record the sweep
- * video. Camera2's AE lock (Camera2Controller.setAeLock) is a real
- * sensor-level lock rather than the PWA's best-effort capability guess,
- * so this doesn't need the PWA's read-current-value-then-reapply dance.
+ * video. Camera2's AE lock (CameraXController.setAeLock, via
+ * Camera2Interop) is a real sensor-level lock rather than the PWA's
+ * best-effort capability guess, so this doesn't need the PWA's
+ * read-current-value-then-reapply dance.
  */
 class CaptureSequence(private val context: Context, private val outputDir: File) {
 
@@ -58,7 +59,7 @@ class CaptureSequence(private val context: Context, private val outputDir: File)
         timeZone = TimeZone.getTimeZone("UTC")
     }
 
-    suspend fun run(camera: Camera2Controller, snapshot: TrackerSnapshot, captureMode: String): CaptureResult {
+    suspend fun run(camera: CameraXController, snapshot: TrackerSnapshot, captureMode: String): CaptureResult {
         val capturedAt = capturedAtFormat.format(Date())
         val sessionDir = File(outputDir, System.currentTimeMillis().toString()).apply { mkdirs() }
 

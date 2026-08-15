@@ -1,10 +1,24 @@
-# Gavan Capture -- Native Android (Camera2)
+# Gavan Capture -- Native Android (CameraX / Camera2)
 
-A native Kotlin/Camera2 rewrite of `capture-pwa/`, built specifically to compare
-against the PWA: same face-tracking model, same gate thresholds, same capture
-flow -- but talking to the camera sensor directly instead of through a browser's
-`getUserMedia` API. This exists to answer one question: **is the PWA a
-downgrade?**
+A native Kotlin capture app built directly on **CameraX** -- Google's official
+wrapper *on top of* Camera2, not a lesser or web-ish substitute for it -- built
+specifically to compare against `capture-pwa/`: same face-tracking model, same
+gate thresholds, same capture flow, but talking to the camera sensor directly
+instead of through a browser's `getUserMedia` API. This exists to answer one
+question: **is the PWA a downgrade?**
+
+**Why CameraX and not hand-rolled Camera2** (see "Migrated to CameraX" below
+for the full story): an earlier version of this app used the raw Camera2 API
+directly, including hand-derived preview-scaling and rotation Matrix math.
+That math was wrong on real hardware in three different ways across three
+attempts, because getting `TextureView`+`SurfaceTexture` sizing and
+`SENSOR_ORIENTATION` rotation exactly right by pure derivation, with no device
+available to check against, is a well-known trap. CameraX's `PreviewView`
+(`FILL_CENTER`) and `ImageAnalysis`'s own reported `rotationDegrees` are the
+same primitives MediaPipe's own official Android Face Landmarker sample uses
+for exactly this problem, so this now matches a working reference
+implementation instead of inventing one blind. Nothing about the camera
+*quality* story changed -- CameraX is still Camera2 underneath.
 
 ## What's "uplifted" here vs. the PWA
 
@@ -17,16 +31,21 @@ real camera API:
   `manual` constraint (`tryLockCapture` in `deviceCamera.ts`) -- gated on
   `MediaTrackCapabilities.exposureMode` even existing, which Safari doesn't
   expose at all. This app sets `CaptureRequest.CONTROL_AE_LOCK = true`
-  directly on the sensor (`Camera2Controller.setAeLock`) -- an unconditional,
-  always-available Camera2 request key, not a guess.
+  directly on the sensor via CameraX's Camera2Interop escape hatch
+  (`CameraXController.setAeLock`, `Camera2CameraControl` +
+  `CaptureRequestOptions`) -- the literal same CaptureRequest key, still an
+  unconditional, always-available Camera2 control, not a guess.
 - **Resolution ceiling**: the PWA asks for `{ ideal: 3840x2160 }` and then
   re-queries `track.getCapabilities()` to try to hit the browser-negotiated
   max (`pickMaxResolutionConstraints`). This app reads
   `CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP` directly for the
   sensor's actual maximum JPEG output size -- no negotiation layer in between.
 - **Manual controls in general**: focus distance, torch, white balance are all
-  `MediaTrackConstraints` the PWA can only request and hope for; here they're
-  direct `CaptureRequest` keys on `CameraDevice.TEMPLATE_PREVIEW`.
+  `MediaTrackConstraints` the PWA can only request and hope for; here torch is
+  a first-class CameraX `CameraControl.enableTorch()` call, and AE/AWB lock
+  are literal Camera2 `CaptureRequest` keys reached through CameraX's
+  `Camera2Interop` escape hatch (`CameraXController.setAeLock`) -- still
+  Camera2 underneath, not a browser-style capability guess.
 
 If the native build's captures look sharper, better-exposed, or more
 consistent than the PWA's, this is why -- not a difference in the tracking
@@ -65,10 +84,15 @@ translated line-for-line, not redesigned:
   same angle/MAR/smile-width-ratio math, same sign convention, against the
   **same model file** (`assets/models/face_landmarker.task` is byte-identical
   to the PWA's `public/models/face_landmarker.task`), via MediaPipe's official
-  Android AAR instead of the wasm runtime.
+  Android AAR instead of the wasm runtime. Fed frames from CameraX's
+  `ImageAnalysis` (RGBA_8888, rotated only -- never mirrored, see
+  `CameraXController.handleAnalysisFrame`'s doc comment on why mirroring must
+  stay a display-only transform to match the calibrated sign convention).
 - `src/capture/captureSequence.ts` -> `capture/CaptureSequence.kt`: same
   three-still-candidates-then-lock-then-sweep-video flow, same timing
-  constants (120ms between stills, 500ms settle, 5s sweep).
+  constants (120ms between stills, 500ms settle, 5s sweep), now driving
+  `CameraXController` (`ImageCapture`/`VideoCapture`+`Recorder`) instead of
+  raw `CameraCaptureSession` requests.
 - `src/storage/captureStore.ts` -> `storage/` (Room): same record shape,
   same "nothing leaves the device" property -- no network calls anywhere in
   this app.
@@ -111,89 +135,99 @@ device or emulator available** -- everything above compiles and the pure gate
 logic is unit-tested, but the following are unverified on real hardware and
 should be treated as a first cut, not a finished product:
 
-- Actual camera preview, capture, and video-recording behavior end-to-end.
+- Actual camera preview, capture, and video-recording behavior end-to-end
+  under the CameraX architecture (see "Migrated to CameraX" below).
 - The MediaPipe Face Landmarker's live-stream detection against real camera
-  frames (the YUV->Bitmap conversion path in `Camera2Controller.yuv420ToBitmap`
-  in particular -- it's a standard NV21/JPEG round-trip, but unverified for
-  correctness against actual sensor output on a specific device).
+  frames (the RGBA_8888 `ImageAnalysis` -> `Bitmap` conversion path in
+  `CameraXController.rgbaImageProxyToBitmap` in particular -- it's a direct
+  buffer copy, simpler than the hand-rolled YUV conversion it replaced, but
+  still unverified against actual sensor output on a specific device).
+- Whether `PreviewView`'s `FILL_CENTER` scale type and `ImageAnalysis`'s
+  reported `rotationDegrees` produce a correctly-oriented, undistorted
+  preview and correctly-aligned mouth box -- this is the exact problem
+  three straight attempts at hand-rolled Camera2 Matrix math failed to
+  solve (see "Migrated to CameraX" below for why CameraX was adopted
+  instead of a fourth attempt), and while `PreviewView`/`ImageAnalysis`
+  are well-tested library code rather than another hand-derived formula,
+  "well-tested by Google" is not the same claim as "verified in this app,
+  on this device."
 - UI layout on a real screen (touch targets, debug panel scroll behavior,
   countdown numeral placement).
-- Battery/thermal behavior of running Camera2 + MediaPipe GPU delegate +
-  MediaRecorder concurrently.
-- The center-crop preview transform and rotation math below, fixed after
-  first-round device feedback but not yet re-verified on a device.
+- Battery/thermal behavior of running CameraX (Preview + ImageAnalysis +
+  MediaPipe GPU delegate + ImageCapture/VideoCapture) concurrently.
+- The rebind-to-swap-use-cases pattern in `CameraXController.
+  startVideoRecording`/`stopVideoRecording` (drops `ImageCapture`, adds
+  `VideoCapture` for the sweep, then rebinds back) -- structurally mirrors
+  what the original Camera2Controller did with `CameraCaptureSession`
+  reconfiguration, but CameraX's own rebind path is untested here.
 
-### Fixed after first-round device feedback (unverified again until retested)
+## Migrated to CameraX (Camera2 was hand-rolled and got rotation/scaling wrong 3x)
 
-The first APK sent for comparison had two real bugs, both now fixed in
-code but **not yet re-verified on a device**:
+The first three rounds of on-device feedback on this app were all the same
+underlying problem, fixed differently each time and still wrong:
 
-1. **Distorted preview.** `Camera2Controller.open()` was calling
-   `texture.setDefaultBufferSize()` with the raw `TextureView`'s on-screen
-   pixel size -- almost never a size the sensor actually supports, so the
-   hardware silently stretched its native output to fill it. Fixed: the
-   preview size is now picked from the sensor's actual supported sizes
-   (`SCALER_STREAM_CONFIGURATION_MAP`), and `ViewfinderActivity.
-   applyPreviewTransform()` applies a center-crop `Matrix` to the
-   `TextureView` -- matching the PWA's `object-fit: cover` on its
-   `<video>` (`capture-pwa/src/style.css`) -- so scaling stays uniform and
-   any excess is cropped, never squeezed.
-2. **Mouth box not tracking the mouth.** The analysis frame fed to
-   MediaPipe was being pre-mirrored (`rotateAndMirror(..., isFrontFacing)`)
-   *and* the `OverlayView` displaying it was mirrored again via
-   `scaleX(-1)` -- a double mirror. Worse, the ported angle/direction math
-   (`X_SIGN` in `FaceLandmarkerTracker`) was calibrated against *raw,
-   unmirrored* camera-space landmarks (exactly like the PWA, which only
-   ever CSS-mirrors the `<video>`/`<canvas>`, never the frames fed to
-   MediaPipe). Fixed: the analysis bitmap is now rotated only, never
-   mirrored (`rotateBitmap`), and `OverlayView` maps normalized box
-   coordinates through the same center-crop scale/offset as the preview
-   transform above, instead of a naive `box.x * width` stretch mapping
-   that assumed the analysis frame and view shared an aspect ratio (they
-   didn't).
+1. **Round 1**: preview distorted (stretched) -- `Camera2Controller.open()`
+   requested the raw `TextureView` pixel size as the camera buffer size,
+   which the sensor doesn't support, so hardware silently stretched to fill
+   it. Fixed with a center-crop `Matrix` on the `TextureView`.
+2. **Round 2**: "confused what direction it points to" -- the center-crop
+   matrix's rotation math (adapted from the classic, notoriously fiddly
+   Camera2Basic sample) mismatched dimensions and used the wrong rotation
+   basis. Re-derived from scratch in 3 traceable steps.
+3. **Round 3**: still wrong on-device after the re-derivation. Added a
+   manual "Rotate 90°" debug-panel override as a stopgap rather than
+   attempt a fourth blind guess.
 
-Also closed while investigating: `Camera2Controller` was locking exposure
-(`CONTROL_AE_LOCK`) but never white balance (`CONTROL_AWB_LOCK`) -- an
-actual regression against the PWA, which locks both together in
-`tryLockCapture`. Both are now locked/unlocked together everywhere the
-app touches AE lock (preview, still capture, video recording).
+At that point the right call was to stop hand-deriving Camera2 Matrix math
+entirely, not attempt a fourth fix. **This app now uses CameraX**
+(`androidx.camera:*:1.3.4`) instead of raw `CameraCaptureSession`/
+`TextureView`:
 
-### Second round: preview rotation ("confused what direction it points to")
+- `PreviewView` (`app:scaleType="fillCenter"`) replaces `TextureView` +
+  the hand-derived preview `Matrix` entirely -- CameraX owns buffer sizing,
+  center-crop scaling, and rotation.
+- `ImageAnalysis` (`OUTPUT_IMAGE_FORMAT_RGBA_8888`) replaces the manual
+  `ImageReader` + YUV_420_888-to-NV21-to-JPEG-to-Bitmap conversion.
+  `imageProxy.imageInfo.rotationDegrees` reports the correct rotation
+  directly -- computed by CameraX from the sensor orientation and current
+  display rotation, not re-derived by hand.
+- `OverlayView`'s mouth-box mapping (`ViewfinderActivity.
+  updateOverlayTransform`) now recomputes its center-crop scale/offset
+  from the *actual* delivered analysis-frame dimensions on every frame,
+  rather than a separately-queried "preview size" that had to be kept in
+  sync by hand -- this is more robust than the old approach by
+  construction, not just simpler: a mismatch between the preview and
+  analysis stream's aspect ratios (a real bug in an earlier round) can no
+  longer cause the box to drift, because the mapping is always derived
+  from whatever CameraX actually delivered.
+- `ImageCapture` (`CAPTURE_MODE_MAXIMIZE_QUALITY`) replaces the manual max-
+  JPEG-size `ImageReader`. `VideoCapture<Recorder>` replaces `MediaRecorder`
+  + a raw recorder `Surface`, with `Recorder.Builder().
+  setTargetVideoEncodingBitRate(...)` still honoring
+  `TARGET_VIDEO_BITRATE_BPS` (an early draft of this migration silently
+  dropped that bitrate target by building the `Recorder` once with a
+  hardcoded `Quality.HD` instead of using the caller's requested size/
+  bitrate -- caught and fixed before shipping, see git history on
+  `CameraXController.startVideoRecording`).
+- `CONTROL_AE_LOCK`/`CONTROL_AWB_LOCK` are still set as literal Camera2
+  `CaptureRequest` keys, via CameraX's `Camera2Interop`
+  (`Camera2CameraControl` + `CaptureRequestOptions`) -- **the "uplifted
+  hardware" story is unchanged**, this is not a downgrade to a
+  browser-like API, it's removing hand-rolled boilerplate around the same
+  underlying Camera2 controls.
+- Same 3-concurrent-stream discipline as the original Camera2Controller:
+  preview+analysis+still-capture normally, rebinding to preview+analysis+
+  video only for the duration of the sweep recording, since 4 concurrent
+  use cases isn't a combination every device's hardware level guarantees.
 
-The center-crop transform above initially reused a hand-adapted version
-of the classic Camera2Basic sample's `configureTransform` matrix math --
-and mismatched which buffer dimension paired with which view dimension
-in the cover-scale calculation, on top of rotating by the wrong basis
-entirely (sensor orientation degrees fed into a formula meant for a
-display-rotation index). Net effect: the preview wasn't just cropped
-oddly, it was rotated wrong, making it unclear which way the camera
-actually pointed. Replaced with a directly-derived, traceable 3-step
-pipeline in `ViewfinderActivity.applyPreviewTransform` (undo TextureView's
-default stretch -> rotate clockwise by `SENSOR_ORIENTATION` -> uniform
-cover-scale) instead of adapting borrowed matrix algebra -- see that
-method's doc comment for the full derivation.
+This is why the manual "Rotate 90°" debug button from round 3 is gone --
+`PreviewView`/`ImageAnalysis` own that problem now instead of a hand-rolled
+formula, so there's nothing left for a manual override to correct *against*.
+If the preview is still wrong after this change, that's new information
+(a CameraX-level issue, or something specific to the test device), not the
+same bug persisting.
 
-### Third round: still wrong, so this is now manually correctable
-
-The re-derived rotation was tested on-device and was **still** wrong --
-this exact matrix (a buffer rotation combined with a display-time mirror
-via `View.scaleX`) is a well-known trap; getting `SENSOR_ORIENTATION`'s
-exact clockwise/counterclockwise interaction with the front camera's
-separate mirror transform right by pure derivation, with no device to
-check against, has now failed three times in three different ways. Rather
-than ship a fourth blind guess, `Camera2Controller.rotationOffsetDegrees`
-adds a manual 90-degree-step correction on top of the auto-derived value,
-exposed as a "Rotate 90°" button in the viewfinder's debug panel
-(`ViewfinderActivity`'s `rotate_preview_btn`). Both the live preview
-transform and the analysis bitmap fed to the face tracker read the same
-`Camera2Controller.effectiveRotationDegrees` (`sensorOrientation +
-rotationOffsetDegrees`), so tapping the button corrects the mouth-box
-tracking alignment together with the display -- they were misaligned
-from the same root cause, not two independent bugs. Saved
-stills/video also pick up the same correction via `jpegOrientation()`.
-Tap the button until the preview looks upright; there is no need to wait
-on another round-trip for this specific problem going forward.
-
-Treat the first real-device run as the actual start of testing, the same way
-the PWA's own thresholds (documented throughout `config.ts`) were tuned only
-after on-device feedback, not assumed correct from the start.
+Treat the first real-device run against this CameraX version as the actual
+start of testing, the same way the PWA's own thresholds (documented
+throughout `config.ts`) were tuned only after on-device feedback, not
+assumed correct from the start.

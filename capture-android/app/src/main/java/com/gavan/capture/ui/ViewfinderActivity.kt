@@ -1,7 +1,5 @@
 package com.gavan.capture.ui
 
-import android.graphics.Matrix
-import android.graphics.SurfaceTexture
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
@@ -9,14 +7,11 @@ import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.util.Size
-import android.view.TextureView
 import android.view.View
 import android.widget.SeekBar
-import kotlin.math.max
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.gavan.capture.camera.Camera2Controller
+import com.gavan.capture.camera.CameraXController
 import com.gavan.capture.camera.Facing
 import com.gavan.capture.capture.CaptureSequence
 import com.gavan.capture.capture.TrackerSnapshot
@@ -38,16 +33,16 @@ import com.gavan.capture.gates.evaluateSmartFrame
 import com.gavan.capture.storage.CaptureRepository
 import com.gavan.capture.tracker.FaceLandmarkerTracker
 import com.gavan.capture.tracker.TrackerResult
-import com.gavan.capture.tracker.Vec2
 import kotlinx.coroutines.launch
 import java.io.File
+import kotlin.math.max
 
 private enum class TriggerMode { AUTO, MANUAL }
 
 class ViewfinderActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityViewfinderBinding
-    private lateinit var camera: Camera2Controller
+    private lateinit var camera: CameraXController
     private lateinit var tracker: FaceLandmarkerTracker
     private lateinit var captureSequence: CaptureSequence
     private lateinit var repository: CaptureRepository
@@ -65,12 +60,25 @@ class ViewfinderActivity : AppCompatActivity() {
     private var latestTrackerResult = TrackerResult.EMPTY
     private var trackerReady = false
 
+    // Dimensions of the most recent analysis frame actually delivered by
+    // CameraX (post-rotation, from ImageAnalysis's own reported
+    // rotationDegrees -- see CameraXController.handleAnalysisFrame), used
+    // to map the tracker's normalized mouth-box coordinates onto the
+    // PreviewView the same way PreviewView's own FILL_CENTER scale type
+    // maps the camera buffer onto the screen. Written from the analysis
+    // callback's background thread, read from the main thread in
+    // onTrackerResult; a stale read is at worst one frame old and
+    // cosmetically negligible, same informal threading already used for
+    // latestTrackerResult below.
+    private var lastAnalysisWidth = 0
+    private var lastAnalysisHeight = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityViewfinderBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        camera = Camera2Controller(this)
+        camera = CameraXController(this)
         tracker = FaceLandmarkerTracker(this)
         captureSequence = CaptureSequence(this, File(cacheDir, "capture-tmp"))
         repository = CaptureRepository(this)
@@ -80,7 +88,7 @@ class ViewfinderActivity : AppCompatActivity() {
 
         applyMirroring()
         wireControls()
-        setupTextureView()
+        openCamera()
 
         lifecycleScope.launch {
             try {
@@ -96,36 +104,29 @@ class ViewfinderActivity : AppCompatActivity() {
     }
 
     private fun applyMirroring() {
+        // Camera buffer content is fed to the tracker unmirrored (see
+        // CameraXController.handleAnalysisFrame's doc comment); mirroring
+        // for the front camera is purely this display-time transform,
+        // applied identically to the preview and the overlay so the
+        // mouth box mirrors along with what's on screen.
         val mirrored = currentFacing == Facing.FRONT
-        binding.textureView.scaleX = if (mirrored) -1f else 1f
+        binding.previewView.scaleX = if (mirrored) -1f else 1f
         binding.overlayView.scaleX = if (mirrored) -1f else 1f
     }
 
-    private fun setupTextureView() {
-        binding.textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-                openCamera(surface, width, height)
-            }
-            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
-                applyPreviewTransform()
-            }
-            override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean = true
-            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
-        }
-    }
-
-    private fun openCamera(surface: SurfaceTexture, width: Int, height: Int) {
+    private fun openCamera() {
         lifecycleScope.launch {
             try {
                 camera.onAnalysisFrame = { bitmap, timestampMs ->
+                    lastAnalysisWidth = bitmap.width
+                    lastAnalysisHeight = bitmap.height
                     if (trackerReady) tracker.detectAsync(bitmap, timestampMs)
                 }
                 camera.onError = { message -> runOnUiThread { binding.promptBanner.text = message } }
-                camera.open(currentFacing, surface, Size(width, height))
+                camera.open(currentFacing, binding.previewView, this@ViewfinderActivity)
                 runOnUiThread {
                     binding.promptBanner.visibility = View.GONE
                     binding.torchBtn.visibility = if (camera.hasTorch()) View.VISIBLE else View.GONE
-                    applyPreviewTransform()
                 }
             } catch (e: Exception) {
                 runOnUiThread { binding.promptBanner.text = "Camera failed to start: ${e.message}" }
@@ -134,63 +135,26 @@ class ViewfinderActivity : AppCompatActivity() {
     }
 
     /**
-     * Center-crop ("object-fit: cover") transform matching the PWA's
-     * `.viewfinder video { object-fit: cover }` (capture-pwa/src/style.css).
-     * Derived directly in three traceable steps rather than adapted from
-     * the classic (notoriously easy to get subtly wrong) Camera2Basic
-     * sample transform -- an earlier version of this method mismatched
-     * which buffer dimension paired with which view dimension in the
-     * cover-scale calculation, producing a wrongly-rotated/misoriented
-     * preview ("confused what direction it points to").
-     *
-     * TextureView's default behavior with NO transform set is to stretch
-     * whatever buffer it receives to exactly fill the view's bounds, with
-     * no rotation. `CameraCharacteristics.SENSOR_ORIENTATION` is the
-     * angle the raw sensor buffer needs to be rotated CLOCKWISE to appear
-     * upright when the device is in its natural orientation (portrait,
-     * for every phone this targets -- the app is locked to portrait, see
-     * AndroidManifest). So, starting from that default stretched state:
-     *
-     * 1. Undo the default non-uniform stretch, so the buffer occupies its
-     *    own true sensor-native aspect ratio (landscape), centered.
-     * 2. Rotate it clockwise by sensorOrientation degrees to make it
-     *    upright (`Matrix.postRotate`'s positive degrees are clockwise,
-     *    matching SENSOR_ORIENTATION's own documented direction).
-     * 3. Uniformly scale (same factor both axes, so no distortion) so
-     *    the now-upright content fully covers the view, cropping any
-     *    excess rather than leaving gaps.
+     * Maps the tracker's normalized (0-1) mouth-box coordinates -- which
+     * are relative to the actual analysis frame CameraX just delivered --
+     * onto the PreviewView's pixel space, replicating PreviewView's own
+     * FILL_CENTER (center-crop, uniform scale, no distortion) behavior.
+     * Recomputed from the real delivered frame dimensions on every
+     * result, so unlike the old hand-rolled TextureView transform, this
+     * doesn't depend on the analysis stream's resolution matching the
+     * preview stream's -- whatever aspect ratio CameraX actually chose
+     * for each is handled correctly by construction.
      */
-    private fun applyPreviewTransform() {
-        val previewSize = camera.previewSize ?: return
-        val viewWidth = binding.textureView.width
-        val viewHeight = binding.textureView.height
-        if (viewWidth == 0 || viewHeight == 0) return
+    private fun updateOverlayTransform() {
+        val bmpWidth = lastAnalysisWidth
+        val bmpHeight = lastAnalysisHeight
+        val viewWidth = binding.previewView.width
+        val viewHeight = binding.previewView.height
+        if (bmpWidth == 0 || bmpHeight == 0 || viewWidth == 0 || viewHeight == 0) return
 
-        val rotationDeg = camera.effectiveRotationDegrees
-        val bufferWidth = previewSize.width.toFloat()
-        val bufferHeight = previewSize.height.toFloat()
-        val viewW = viewWidth.toFloat()
-        val viewH = viewHeight.toFloat()
-        val centerX = viewW / 2f
-        val centerY = viewH / 2f
-
-        val matrix = Matrix()
-        matrix.setScale(bufferWidth / viewW, bufferHeight / viewH, centerX, centerY)
-        matrix.postRotate(rotationDeg.toFloat(), centerX, centerY)
-
-        val uprightWidth = if (rotationDeg == 90 || rotationDeg == 270) bufferHeight else bufferWidth
-        val uprightHeight = if (rotationDeg == 90 || rotationDeg == 270) bufferWidth else bufferHeight
-        val coverScale = max(viewW / uprightWidth, viewH / uprightHeight)
-        matrix.postScale(coverScale, coverScale, centerX, centerY)
-        binding.textureView.setTransform(matrix)
-
-        // Same upright dimensions + cover-scale, applied to the overlay's
-        // coordinate mapping instead of a texture Matrix -- the analysis
-        // stream's aspect ratio is matched to previewSize's (see
-        // Camera2Controller.open), so this lines up regardless of the
-        // analysis stream's absolute pixel size.
-        val scaledWidth = uprightWidth * coverScale
-        val scaledHeight = uprightHeight * coverScale
+        val coverScale = max(viewWidth.toFloat() / bmpWidth, viewHeight.toFloat() / bmpHeight)
+        val scaledWidth = bmpWidth * coverScale
+        val scaledHeight = bmpHeight * coverScale
         binding.overlayView.setContentTransform(
             scaledWidth,
             scaledHeight,
@@ -202,6 +166,7 @@ class ViewfinderActivity : AppCompatActivity() {
     private fun onTrackerResult(result: TrackerResult) {
         if (capturing || switchingCamera) return
         val now = System.currentTimeMillis().toDouble()
+        updateOverlayTransform()
 
         val evaluation = evaluateSmartFrame(
             SmartFrameInputs(result, null, false, now, distanceRange),
@@ -305,11 +270,6 @@ class ViewfinderActivity : AppCompatActivity() {
         binding.debugBtn.setOnClickListener {
             binding.debugPanel.visibility = if (binding.debugPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
-        binding.rotatePreviewBtn.setOnClickListener {
-            camera.rotationOffsetDegrees = (camera.rotationOffsetDegrees + 90) % 360
-            applyPreviewTransform()
-            binding.debugReadout.text = "rotation offset ${camera.rotationOffsetDegrees}°"
-        }
 
         binding.distanceMinSeek.progress = (distanceRange.min * 200).toInt()
         binding.distanceMaxSeek.progress = (distanceRange.max * 200).toInt()
@@ -349,17 +309,11 @@ class ViewfinderActivity : AppCompatActivity() {
         smartFrameState = SmartFrameGateState()
         captureArmState = createInitialCaptureArmState()
 
-        val texture = binding.textureView.surfaceTexture
-        if (texture == null) {
-            switchingCamera = false
-            return
-        }
         lifecycleScope.launch {
             try {
-                camera.open(currentFacing, texture, Size(binding.textureView.width, binding.textureView.height))
+                camera.open(currentFacing, binding.previewView, this@ViewfinderActivity)
                 binding.torchBtn.visibility = if (camera.hasTorch()) View.VISIBLE else View.GONE
                 torchOn = false
-                applyPreviewTransform()
             } catch (e: Exception) {
                 binding.promptBanner.text = "Camera switch failed: ${e.message}"
                 binding.promptBanner.visibility = View.VISIBLE
